@@ -5,17 +5,16 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, c
 import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
+// This configuration will work in the interactive environment.
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-trivia-app';
-
 
 // --- FIREBASE INITIALIZATION ---
 let app;
 let auth;
 let db;
 
-// Basic check for firebase config
 if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     try {
         app = initializeApp(firebaseConfig);
@@ -25,9 +24,8 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         console.error("Firebase initialization failed:", error);
     }
 } else {
-    console.warn("Firebase configuration is missing or incomplete. App will run in a limited mode.");
+    console.warn("Firebase configuration is missing. App will run in a limited mode.");
 }
-
 
 // --- HELPER FUNCTIONS ---
 const generateRoomCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -318,7 +316,6 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
-            // For multiplayer, local state is reset via the onSnapshot listener
         } else {
             setIsAnswered(false);
             setSelectedAnswer(null);
@@ -335,11 +332,11 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const allPlayersAnswered = gameMode === 'multiplayer' ? gameData.players.length === Object.keys(gameData.answers || {}).length : isAnswered;
 
     const getAnswerClass = (answer) => {
-        if (!allPlayersAnswered) return 'bg-gray-700 hover:bg-gray-600 border-gray-600';
+        if (!isAnswered) return 'bg-gray-700 hover:bg-gray-600 border-gray-600';
         const isCorrect = answer === currentQuestion.correct_answer;
-        if(isCorrect) return 'bg-green-500/50 border-green-500';
+        if(isCorrect) return 'bg-green-500/50 border-green-500 ring-2 ring-green-400';
         if (answer === selectedAnswer && !isCorrect) return 'bg-red-500/50 border-red-500';
-        return 'bg-gray-800 border-gray-700 opacity-70';
+        return 'bg-gray-800 border-gray-700 opacity-60';
     };
     
     return (
@@ -366,16 +363,15 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                 </div>
             </main>
             
-            <footer className="flex-shrink-0 mt-2 sm:mt-4">
-                 <div className="min-h-[90px] flex flex-col justify-end">
-                    {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
-                    
-                    {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
-                 </div>
+            <footer className="flex-shrink-0 mt-2 sm:mt-4 flex flex-col justify-end min-h-[100px]">
+                {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
+                
+                {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg mt-auto">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
             </footer>
         </div>
     );
 };
+
 
 const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
     if (gameMode === 'single') {
@@ -411,9 +407,9 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
                         { order: 'order-1', crown: 'text-gray-300 h-8 w-8', userBg: 'bg-gray-400', box: 'bg-gray-500 h-20' },
                         { order: 'order-3', crown: 'text-yellow-600 h-8 w-8', userBg: 'bg-yellow-700', box: 'bg-yellow-800 h-16' }
                     ];
-                    // Handle cases with fewer than 3 players correctly
                     const styleIndex = sortedPlayers.length === 2 && index === 1 ? 1 : index;
                     const style = podiumStyles[styleIndex];
+
 
                     return (
                         <div key={player.uid} className={`flex flex-col items-center ${style.order}`}>
@@ -531,7 +527,7 @@ function App() {
         if (!db) {
             return <div className="text-white text-center p-8">
                 <h2 className="text-2xl font-bold text-red-400">Firebase Not Configured</h2>
-                <p className="mt-4 text-gray-300">This app requires Firebase to function. Please ensure your Firebase configuration is correctly set up.</p>
+                <p className="mt-4 text-gray-300">This app requires Firebase to function. If you are the developer, please make sure to set up your Firebase project and add the configuration keys to your Vercel environment variables.</p>
             </div>
         }
         if (view === 'error') return <div className="text-red-400 text-center">{error}</div>;
