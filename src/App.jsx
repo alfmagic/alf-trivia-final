@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
-import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
+import { Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
@@ -311,16 +311,17 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         const nextIndex = gameData.currentQuestionIndex + 1;
         const isGameOver = nextIndex >= gameData.questions.length;
 
-        if (gameMode === 'multiplayer') {
+        // BUG FIX: Reset local answer state for single player
+        if (gameMode === 'single') {
+            setIsAnswered(false);
+            setSelectedAnswer(null);
+            if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
+            else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
+        } else {
+            // For multiplayer, reset is handled by Firestore update
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
-            // For multiplayer, reset local state when a new question is set from Firestore
-        } else {
-             setIsAnswered(false);
-             setSelectedAnswer(null);
-             if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
-             else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
         }
     };
     
