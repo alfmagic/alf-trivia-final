@@ -30,8 +30,14 @@ try {
 const generateRoomCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 const generateRandomName = () => {
     const adjectives = ["Clever", "Swift", "Witty", "Curious", "Brave", "Silent", "Daring", "Happy", "Lucky"];
-    const nouns = ["Fox", "Jaguar", "Panda", "Raptor", "Lion", "Owl", "Wolf", "Monkey", "Eagle"];
-    return `${adjectives[Math.floor(Math.random() * adjectives.length)]} ${nouns[Math.floor(Math.random() * nouns.length)]}`;
+    const animals = [
+        { name: "Fox", emoji: "🦊" }, { name: "Jaguar", emoji: "🐆" }, { name: "Panda", emoji: "🐼" },
+        { name: "Raptor", emoji: "🦖" }, { name: "Lion", emoji: "🦁" }, { name: "Owl", emoji: "🦉" },
+        { name: "Wolf", emoji: "🐺" }, { name: "Monkey", emoji: "🐵" }, { name: "Eagle", emoji: "🦅" }
+    ];
+    const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const animal = animals[Math.floor(Math.random() * animals.length)];
+    return `${adjective} ${animal.name} ${animal.emoji}`;
 };
 const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
 
@@ -50,7 +56,6 @@ const useTriviaAPI = () => {
                 'Sports': { id: 'Sports', subcategories: [] },
                 'Other': { id: 'Other', subcategories: [] },
             };
-
             data.trivia_categories.forEach(cat => {
                 if (cat.name.includes('Entertainment')) categoryMap['Entertainment'].subcategories.push(cat);
                 else if (cat.name.includes('Science')) categoryMap['Science'].subcategories.push(cat);
@@ -60,78 +65,57 @@ const useTriviaAPI = () => {
                 else if (cat.name === 'General Knowledge') categoryMap['General Knowledge'].subcategories.push(cat);
                 else categoryMap['Other'].subcategories.push(cat);
             });
-
             return Object.values(categoryMap).filter(group => group.subcategories.length > 0);
         } catch (error) { console.error('Failed to fetch categories:', error); return []; }
     }, []);
 
     const fetchQuestions = useCallback(async ({ amount = 10, categories = [], difficulty = '' }) => {
-        const fetchPromises = [];
-        if (categories.length === 0) {
-            const url = `https://opentdb.com/api.php?amount=${amount}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
-            fetchPromises.push(fetch(url).then(res => res.json()));
-        } else {
-            const questionsPerCategory = Math.max(1, Math.ceil(amount / categories.length));
-            categories.forEach(catId => {
-                const url = `https://opentdb.com/api.php?amount=${questionsPerCategory}&category=${catId}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
-                fetchPromises.push(fetch(url).then(res => res.json()));
-            });
+        const fetchUrl = (catId = '') => `https://opentdb.com/api.php?amount=${amount}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
+        
+        const categoriesToTry = categories.length > 0 ? shuffleArray(categories) : [''];
+
+        for (const catId of categoriesToTry) {
+            try {
+                const response = await fetch(fetchUrl(catId));
+                if (!response.ok) continue;
+                const data = await response.json();
+                if (data.response_code === 0 && data.results.length > 0) {
+                    const questions = data.results.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
+                    if (questions.length >= amount) {
+                        return questions.slice(0, amount);
+                    }
+                }
+            } catch (error) {
+                console.warn(`Failed to fetch from category ${catId}, trying next.`);
+            }
         }
         
         try {
-            const results = await Promise.all(fetchPromises);
-            const allQuestions = results.flatMap(result => result.results || []);
-
-            if (allQuestions.length === 0) {
-                console.warn("Could not fetch questions for the selected criteria. Falling back to general questions.");
-                return await fetchQuestions({ amount: 10, categories: [], difficulty: '' });
+            const response = await fetch(fetchUrl());
+            const data = await response.json();
+            if (data.response_code === 0) {
+                 return data.results.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
             }
-            
-            const formattedQuestions = allQuestions.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
-            return shuffleArray(formattedQuestions).slice(0, amount);
         } catch (error) {
-            console.error('Failed to fetch questions:', error);
-            return [];
+             console.error('Final fallback fetch failed:', error);
         }
+
+        return [];
     }, []);
 
     return { fetchCategories, fetchQuestions };
 };
 
 // --- UI COMPONENTS ---
-const LoadingSpinner = ({ text = "Loading..."}) => (
-    <div className="flex flex-col justify-center items-center h-full text-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500"></div>
-        <p className="mt-4 text-white">{text}</p>
-    </div>
-);
-
-const CustomModal = ({ title, children, onClose }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4">
-        <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-lg p-6 sm:p-8 w-full max-w-md text-white text-center">
-            <h2 className="text-2xl font-bold mb-6">{title}</h2>
-            <div>{children}</div>
-            <button onClick={onClose} className="mt-8 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg transition-transform transform hover:scale-105">
-                Close
-            </button>
-        </div>
-    </div>
-);
+const LoadingSpinner = ({ text = "Loading..."}) => ( <div className="flex flex-col justify-center items-center h-full text-center"><div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500"></div><p className="mt-4 text-white">{text}</p></div> );
+const CustomModal = ({ title, children, onClose }) => ( <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4"><div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-lg p-6 sm:p-8 w-full max-w-md text-white text-center"><h2 className="text-2xl font-bold mb-6">{title}</h2><div>{children}</div><button onClick={onClose} className="mt-8 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg">Close</button></div></div> );
 
 const MainMenu = ({ setView, setGameMode }) => (
     <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full text-center">
-        <div className="mb-10">
-            <Gamepad2 className="mx-auto h-16 w-16 text-purple-400" />
-            <h1 className="text-5xl font-bold text-white mt-4">Trivia Questions</h1>
-            <p className="text-gray-400 mt-2">made by Alf</p>
-        </div>
+        <div className="mb-10"><Gamepad2 className="mx-auto h-16 w-16 text-purple-400" /><h1 className="text-5xl font-bold text-white mt-4">Trivia Questions</h1><p className="text-gray-400 mt-2">made by Alf</p></div>
         <div className="w-full space-y-4">
-            <button onClick={() => { setGameMode('single'); setView('settings'); }} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3 transition-transform transform hover:scale-105 shadow-lg">
-                <User /> Single Player
-            </button>
-            <button onClick={() => { setGameMode('multiplayer'); setView('settings'); }} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3 transition-transform transform hover:scale-105 shadow-lg">
-                <Users /> Multiplayer
-            </button>
+            <button onClick={() => { setGameMode('single'); setView('settings'); }} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3"><User /> Single Player</button>
+            <button onClick={() => { setGameMode('multiplayer'); setView('settings'); }} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3"><Users /> Multiplayer</button>
         </div>
     </div>
 );
@@ -143,106 +127,54 @@ const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }
     const { fetchCategories } = useTriviaAPI();
 
     useEffect(() => {
-        const loadCategories = async () => {
-            setGroupedCategories(await fetchCategories());
-            setLoading(false);
-        };
+        const loadCategories = async () => { setGroupedCategories(await fetchCategories()); setLoading(false); };
         loadCategories();
     }, [fetchCategories]);
 
-    const handleCategoryToggle = (catId) => {
-        setSettings(prev => ({
-            ...prev,
-            categories: prev.categories.includes(catId)
-                ? prev.categories.filter(id => id !== catId)
-                : [...prev.categories, catId]
-        }));
-    };
-    
+    const handleCategoryToggle = (catId) => setSettings(prev => ({ ...prev, categories: prev.categories.includes(catId) ? prev.categories.filter(id => id !== catId) : [...prev.categories, catId] }));
     const handleSelectAll = () => {
         const allCategoryIds = groupedCategories.flatMap(g => g.subcategories.map(s => s.id));
-        if (settings.categories.length === allCategoryIds.length) {
-            setSettings(prev => ({ ...prev, categories: [] }));
-        } else {
-            setSettings(prev => ({ ...prev, categories: allCategoryIds }));
-        }
+        setSettings(prev => ({ ...prev, categories: prev.categories.length === allCategoryIds.length ? [] : allCategoryIds }));
     };
-    
-    const handleContinue = () => {
-        setGameSettings(settings);
-        if (gameMode === 'multiplayer' && !directJoinRoomId) {
-            setView('multiplayerMenu');
-        } else {
-            setView('enterName');
-        }
-    };
-    
-    const sliderStyle = {
-        background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 100%)`
-    };
+    const handleContinue = () => { setGameSettings(settings); setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'multiplayerMenu' : 'enterName'); };
+    const sliderStyle = { background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 100%)` };
 
     if (loading) return <LoadingSpinner text="Fetching categories..."/>;
 
     return (
         <div className="w-full max-w-lg mx-auto p-4 flex flex-col justify-center h-full">
-            <div className="text-center mb-6">
-                <SlidersHorizontal className="mx-auto h-12 w-12 text-purple-400" />
-                <h1 className="text-4xl font-bold text-white mt-4">Game Settings</h1>
-            </div>
-            
+            <div className="text-center mb-6"><SlidersHorizontal className="mx-auto h-12 w-12 text-purple-400" /><h1 className="text-4xl font-bold text-white mt-4">Game Settings</h1></div>
             <div className="space-y-6 bg-gray-800/50 p-6 rounded-2xl">
                 <div>
                     <label htmlFor="amount" className="block text-lg font-medium text-white mb-2">Number of Questions: <span className="font-bold text-purple-400">{settings.amount}</span></label>
-                    <input type="range" id="amount" min="5" max="20" step="1" value={settings.amount} onChange={e => setSettings({...settings, amount: Number(e.target.value)})}
-                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" style={sliderStyle}/>
+                    <input type="range" id="amount" min="5" max="20" step="1" value={settings.amount} onChange={e => setSettings({...settings, amount: Number(e.target.value)})} className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer" style={sliderStyle}/>
                 </div>
-
                 <div>
                     <label className="block text-lg font-medium text-white mb-2">Difficulty</label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {['', 'easy', 'medium', 'hard'].map(diff => (
-                            <button key={diff} onClick={() => setSettings({...settings, difficulty: diff})} className={`py-2 px-3 rounded-lg capitalize text-sm font-bold transition-colors ${settings.difficulty === diff ? 'bg-purple-600 text-white ring-2 ring-purple-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>
-                                {diff || 'Any'}
-                            </button>
-                        ))}
+                        {['', 'easy', 'medium', 'hard'].map(diff => ( <button key={diff} onClick={() => setSettings({...settings, difficulty: diff})} className={`py-2 px-3 rounded-lg capitalize text-sm font-bold transition-colors ${settings.difficulty === diff ? 'bg-purple-600 text-white ring-2 ring-purple-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>{diff || 'Any'}</button>))}
                     </div>
                 </div>
-
                 <div>
                     <div className="flex justify-between items-center mb-2">
                         <label className="block text-lg font-medium text-white">Categories</label>
-                        <button onClick={handleSelectAll} className="text-xs font-bold text-purple-400 hover:text-purple-300">
-                             {settings.categories.length === groupedCategories.flatMap(g => g.subcategories.map(s => s.id)).length ? 'Deselect All' : 'Select All'}
-                        </button>
+                        <button onClick={handleSelectAll} className="text-xs font-bold text-purple-400 hover:text-purple-300">{settings.categories.length === groupedCategories.flatMap(g => g.subcategories.map(s => s.id)).length ? 'Deselect All' : 'Select All'}</button>
                     </div>
                     <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-900/50 rounded-lg">
                         {groupedCategories.map(group => (
                             <details key={group.id} className="bg-gray-700/50 rounded-lg" open>
-                                <summary className="p-2 cursor-pointer font-bold text-white list-none flex justify-between items-center">
-                                    {group.id}
-                                    <ChevronLeft className="transform transition-transform -rotate-90 open:rotate-0" />
-                                </summary>
+                                <summary className="p-2 cursor-pointer font-bold text-white list-none flex justify-between items-center">{group.id}<ChevronLeft className="transform transition-transform -rotate-90 open:rotate-0" /></summary>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 border-t border-gray-600">
-                                    {group.subcategories.map(cat => (
-                                        <button key={cat.id} onClick={() => handleCategoryToggle(cat.id)} className={`py-2 px-3 text-left rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${settings.categories.includes(cat.id) ? 'bg-purple-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`}>
-                                             {settings.categories.includes(cat.id) ? <CheckSquare size={14}/> : <Square size={14}/>}
-                                             {cat.name}
-                                        </button>
-                                    ))}
+                                    {group.subcategories.map(cat => ( <button key={cat.id} onClick={() => handleCategoryToggle(cat.id)} className={`py-2 px-3 text-left rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${settings.categories.includes(cat.id) ? 'bg-purple-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`}>{settings.categories.includes(cat.id) ? <CheckSquare size={14}/> : <Square size={14}/>}{cat.name}</button>))}
                                 </div>
                             </details>
                         ))}
                     </div>
                 </div>
             </div>
-
             <div className="mt-8 flex gap-4">
-                <button onClick={() => setView('mainMenu')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg">
-                    <ChevronLeft className="inline-block mr-1" size={20}/> Back
-                </button>
-                <button onClick={handleContinue} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">
-                    Continue <ArrowRight className="inline-block ml-1" size={20}/>
-                </button>
+                <button onClick={() => setView('mainMenu')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
+                <button onClick={handleContinue} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">Continue <ArrowRight className="inline-block ml-1" size={20}/></button>
             </div>
         </div>
     );
@@ -250,37 +182,15 @@ const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }
 
 const EnterName = ({ setView, setPlayerName, gameMode, playerName, directJoinRoomId, handleJoinRoom }) => {
     const [name, setName] = useState(playerName);
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        let finalName = name.trim();
-        if (!finalName) finalName = generateRandomName();
-        setPlayerName(finalName);
-
-        if (directJoinRoomId) handleJoinRoom(directJoinRoomId, finalName);
-        else if (gameMode === 'single') setView('game');
-        else setView('multiplayerMenu');
-    };
-
+    const handleSubmit = (e) => { e.preventDefault(); let finalName = name.trim(); if (!finalName) finalName = generateRandomName(); setPlayerName(finalName); if (directJoinRoomId) handleJoinRoom(directJoinRoomId, finalName); else if (gameMode === 'single') setView('game'); else setView('multiplayerMenu'); };
     return (
         <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full">
-            <div className="text-center mb-10">
-                <Users className="mx-auto h-12 w-12 text-purple-400" />
-                <h1 className="text-4xl font-bold text-white mt-4">
-                    {directJoinRoomId ? "Joining Game" : "Enter Your Name"}
-                </h1>
-                <p className="text-gray-400 mt-2">Enter your name or continue with a random one.</p>
-            </div>
+            <div className="text-center mb-10"><Users className="mx-auto h-12 w-12 text-purple-400" /><h1 className="text-4xl font-bold text-white mt-4">{directJoinRoomId ? "Joining Game" : "Enter Your Name"}</h1><p className="text-gray-400 mt-2">Enter your name or continue with a random one.</p></div>
             <form onSubmit={handleSubmit} className="w-full space-y-6">
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Clever Player"
-                    className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Clever Player" className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
                 <div className="flex gap-4">
-                    <button type="button" onClick={() => setView('settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg">
-                         <ChevronLeft className="inline-block mr-1" size={20}/> Back
-                    </button>
-                    <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">
-                        Continue <ArrowRight className="inline-block ml-1" size={20}/>
-                    </button>
+                    <button type="button" onClick={() => setView('settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
+                    <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">Continue <ArrowRight className="inline-block ml-1" size={20}/></button>
                 </div>
             </form>
         </div>
@@ -291,63 +201,21 @@ const MultiplayerMenu = ({ setView, setRoomId, userId, playerName, handleJoinRoo
     const [joinCode, setJoinCode] = useState('');
     const [error, setError] = useState('');
     const { fetchQuestions } = useTriviaAPI();
-
-    const handleCreateRoom = async () => {
-        const newRoomId = generateRoomCode();
-        setRoomId(newRoomId);
-        const questions = await fetchQuestions(gameSettings);
-        if (questions.length === 0) {
-            setError('Could not fetch questions with these settings. Please try again.');
-            return;
-        }
-        const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${newRoomId}`);
-
-        try {
-            await setDoc(roomDocRef, {
-                hostId: userId,
-                players: [{ uid: userId, name: playerName, score: 0 }],
-                questions,
-                gameSettings,
-                currentQuestionIndex: 0,
-                gameState: 'waiting',
-                createdAt: new Date(),
-                answers: {},
-            });
-            setView('lobby');
-        } catch (e) {
-            console.error("Error creating room: ", e);
-            setError('Could not create room. Please try again.');
-        }
-    };
-    
-    const onJoinSubmit = async (e) => {
-        e.preventDefault();
-        if (!joinCode.trim()) return;
-        await handleJoinRoom(joinCode, playerName, setError);
-    };
-    
+    const handleCreateRoom = async () => { const newRoomId = generateRoomCode(); setRoomId(newRoomId); const questions = await fetchQuestions(gameSettings); if (questions.length < gameSettings.amount) { setError('Could not fetch enough questions with these settings. Please try again.'); return; } const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${newRoomId}`); try { await setDoc(roomDocRef, { hostId: userId, players: [{ uid: userId, name: playerName, score: 0 }], questions, gameSettings, currentQuestionIndex: 0, gameState: 'waiting', createdAt: new Date(), answers: {} }); setView('lobby'); } catch (e) { console.error("Error creating room: ", e); setError('Could not create room. Please try again.'); } };
+    const onJoinSubmit = async (e) => { e.preventDefault(); if (!joinCode.trim()) return; await handleJoinRoom(joinCode, playerName, setError); };
     return (
         <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full">
-            <div className="text-center mb-10">
-                <Users className="mx-auto h-12 w-12 text-green-400" />
-                <h1 className="text-4xl font-bold text-white mt-4">Multiplayer</h1>
-                <p className="text-gray-400 mt-2">Create a room or join a friend's</p>
-            </div>
+            <div className="text-center mb-10"><Users className="mx-auto h-12 w-12 text-green-400" /><h1 className="text-4xl font-bold text-white mt-4">Multiplayer</h1><p className="text-gray-400 mt-2">Create a room or join a friend's</p></div>
             {error && <p className="text-red-400 bg-red-900/50 p-3 rounded-lg mb-4">{error}</p>}
             <div className="w-full space-y-4">
                 <button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3">Create Room</button>
                 <p className="text-center text-gray-400">OR</p>
                 <form onSubmit={onJoinSubmit} className="w-full space-y-4">
-                    <input type="text" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="ENTER ROOM CODE"
-                        className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center tracking-widest font-mono text-lg focus:outline-none focus:border-pink-500" maxLength="6" />
-                    <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-purple-500 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50" disabled={!joinCode.trim()}>
-                        Join Room
-                    </button>
+                    <input type="text" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="ENTER ROOM CODE" className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center tracking-widest font-mono text-lg focus:outline-none focus:border-pink-500" maxLength="6" />
+                    <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-purple-500 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50" disabled={!joinCode.trim()}>Join Room</button>
                 </form>
             </div>
-             <button type="button" onClick={() => setView('settings')} className="mt-8 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg">
-                <ChevronLeft className="inline-block mr-1" size={20}/> Back
-            </button>
+             <button type="button" onClick={() => setView('settings')} className="mt-8 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
         </div>
     );
 };
@@ -361,52 +229,13 @@ const Lobby = ({ setView, roomId, userId }) => {
     useEffect(() => {
         if (!roomId || !db) { setView('multiplayerMenu'); return; }
         const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
-        const unsubscribe = onSnapshot(roomDocRef, (doc) => {
-            if (doc.exists()) {
-                const data = doc.data();
-                setRoom(data);
-                setIsHost(data.hostId === userId);
-                if (data.gameState === 'playing') setView('game');
-            } else {
-                setError('This room no longer exists.');
-                setTimeout(() => { setView('multiplayerMenu'); }, 3000);
-            }
-        });
+        const unsubscribe = onSnapshot(roomDocRef, (doc) => { if (doc.exists()) { const data = doc.data(); setRoom(data); setIsHost(data.hostId === userId); if (data.gameState === 'playing') setView('game'); } else { setError('This room no longer exists.'); setTimeout(() => { setView('multiplayerMenu'); }, 3000); } });
         return () => unsubscribe();
     }, [roomId, userId, setView]);
 
-    const handleStartGame = async () => {
-        const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
-        try { await updateDoc(roomDocRef, { gameState: 'playing' }); } catch (e) { console.error("Error starting game: ", e); setError('Failed to start the game.'); }
-    };
-    
-    const handleLeaveRoom = async () => {
-        if (!room) return;
-        try {
-            const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
-            const updatedPlayers = room.players.filter(p => p.uid !== userId);
-            if (updatedPlayers.length === 0) {
-                await deleteDoc(roomDocRef);
-            } else {
-                const newHostId = (isHost && updatedPlayers.length > 0) ? updatedPlayers[0].uid : room.hostId;
-                await updateDoc(roomDocRef, { players: updatedPlayers, hostId: newHostId });
-            }
-            setView('mainMenu');
-        } catch (e) { console.error("Error leaving room: ", e); setError('Could not leave the room.'); }
-    };
-
-    const copyToClipboard = (text, type) => {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        document.body.appendChild(textArea);
-        textArea.select();
-        try {
-            document.execCommand('copy');
-            setCopied(type);
-            setTimeout(() => setCopied(''), 2000);
-        } catch (err) { console.error('Failed to copy: ', err); }
-        document.body.removeChild(textArea);
-    };
+    const handleStartGame = async () => { const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`); try { await updateDoc(roomDocRef, { gameState: 'playing' }); } catch (e) { console.error("Error starting game: ", e); setError('Failed to start the game.'); } };
+    const handleLeaveRoom = async () => { if (!room) return; try { const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`); const updatedPlayers = room.players.filter(p => p.uid !== userId); if (updatedPlayers.length === 0) { await deleteDoc(roomDocRef); } else { const newHostId = (isHost && updatedPlayers.length > 0) ? updatedPlayers[0].uid : room.hostId; await updateDoc(roomDocRef, { players: updatedPlayers, hostId: newHostId }); } setView('mainMenu'); } catch (e) { console.error("Error leaving room: ", e); setError('Could not leave the room.'); } };
+    const copyToClipboard = (text, type) => { const textArea = document.createElement('textarea'); textArea.value = text; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); setCopied(type); setTimeout(() => setCopied(''), 2000); } catch (err) { console.error('Failed to copy: ', err); } document.body.removeChild(textArea); };
 
     if (error) return <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full text-white"><XCircle className="h-16 w-16 text-red-500 mb-4" /><h2 className="text-2xl font-bold">{error}</h2><p className="text-gray-400">Redirecting you...</p></div>
     if (!room) return <LoadingSpinner />;
@@ -414,21 +243,9 @@ const Lobby = ({ setView, roomId, userId }) => {
 
     return (
         <div className="w-full max-w-lg mx-auto p-4 flex flex-col items-center justify-center h-full">
-             <div className="w-full text-center mb-6">
-                <div className="w-20 h-20 mx-auto rounded-full bg-purple-500/20 flex items-center justify-center mb-4"><div className="w-16 h-16 rounded-full bg-purple-500/30 flex items-center justify-center animate-pulse"><Users className="h-8 w-8 text-purple-300"/></div></div>
-                <h1 className="text-2xl font-bold text-white">{isHost ? "You are the host!" : "Waiting for host to start..."}</h1>
-                <p className="text-gray-400 mt-1">Share the room code or link with your friends!</p>
-            </div>
-            <div className="bg-gray-800/50 border border-gray-700 p-3 rounded-xl flex items-center justify-center gap-2 mb-2">
-                <span className="text-gray-300">Code:</span><span className="text-2xl font-bold text-white tracking-widest font-mono">{roomId}</span>
-                <button onClick={() => copyToClipboard(roomId, 'code')} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg"><Copy size={18} /></button>
-            </div>
-            <div className="bg-gray-800/50 border border-gray-700 p-3 rounded-xl flex items-center justify-center gap-2 mb-6">
-                 <span className="text-gray-300">Link:</span>
-                <button onClick={() => copyToClipboard(shareLink, 'link')} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center gap-2">
-                    <LinkIcon size={18} /> Copy Invite Link
-                </button>
-            </div>
+             <div className="w-full text-center mb-6"><div className="w-20 h-20 mx-auto rounded-full bg-purple-500/20 flex items-center justify-center mb-4"><div className="w-16 h-16 rounded-full bg-purple-500/30 flex items-center justify-center animate-pulse"><Users className="h-8 w-8 text-purple-300"/></div></div><h1 className="text-2xl font-bold text-white">{isHost ? "You are the host!" : "Waiting for host to start..."}</h1><p className="text-gray-400 mt-1">Share the room code or link with your friends!</p></div>
+            <div className="bg-gray-800/50 border border-gray-700 p-3 rounded-xl flex items-center justify-center gap-2 mb-2"><span className="text-gray-300">Code:</span><span className="text-2xl font-bold text-white tracking-widest font-mono">{roomId}</span><button onClick={() => copyToClipboard(roomId, 'code')} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg"><Copy size={18} /></button></div>
+            <div className="bg-gray-800/50 border border-gray-700 p-3 rounded-xl flex items-center justify-center gap-2 mb-6"><span className="text-gray-300">Link:</span><button onClick={() => copyToClipboard(shareLink, 'link')} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center gap-2"><LinkIcon size={18} /> Copy Invite Link</button></div>
             <p className="text-sm text-green-400 mb-6 h-5 transition-opacity">{copied ? `Copied ${copied} to clipboard!` : ''}</p>
             <div className="w-full bg-gray-800/50 border border-gray-700 rounded-xl p-6 mb-8"><h3 className="text-white font-bold text-lg mb-4 text-center">Players in room ({room.players.length})</h3><div className="space-y-3 max-h-48 overflow-y-auto">{room.players.map(player => (<div key={player.uid} className="bg-gray-700/50 p-3 rounded-lg flex items-center justify-between"><span className="text-white font-semibold">{player.name}</span>{player.uid === room.hostId && <Crown size={20} className="text-yellow-400" />}</div>))}</div></div>
             <div className="w-full flex flex-col space-y-3">
@@ -451,18 +268,18 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             if (gameMode === 'multiplayer') {
                 if (!roomId || !db) return;
                 const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
-                const unsubscribe = onSnapshot(roomDocRef, (doc) => {
+                return onSnapshot(roomDocRef, (doc) => {
                     if (doc.exists()) {
                         const data = doc.data();
                         setGameData(data);
                         const myAnswer = data.answers ? data.answers[userId] : undefined;
-                        if(myAnswer !== undefined) { setIsAnswered(true); setSelectedAnswer(myAnswer); } else { setIsAnswered(false); setSelectedAnswer(null); }
+                        setIsAnswered(myAnswer !== undefined);
+                        if (myAnswer) setSelectedAnswer(myAnswer);
                         if(data.gameState === 'finished') setModalContent({ title: "Game Over!", body: <WinnerDisplay players={data.players} gameMode="multiplayer" /> });
                     } else {
                          setModalContent({ title: "Error", body: <p>The game room was not found. It might have been deleted.</p> });
                     }
                 });
-                return unsubscribe;
             } else {
                 const questions = await fetchQuestions(gameSettings);
                 if (questions.length < gameSettings.amount) {
@@ -505,9 +322,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         if (isCorrect) {
             const playerIndex = gameData.players.findIndex(p => p.uid === userId);
             const updatedPlayers = [...gameData.players];
-            if (playerIndex !== -1) {
-                updatedPlayers[playerIndex].score += 1;
-            }
+            if (playerIndex !== -1) updatedPlayers[playerIndex].score += 1;
             
             if (gameMode === 'multiplayer') {
                 const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
@@ -530,11 +345,8 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
         } else {
-             if (isGameOver) {
-                setGameData(prev => ({...prev, gameState: 'finished' }));
-             } else {
-                setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex, isAnswered: false, selectedAnswer: null }));
-             }
+             if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
+             else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex, isAnswered: false, selectedAnswer: null }));
         }
     };
     
@@ -568,13 +380,14 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                       <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
                       <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
                     </div>
-                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
-                        {!allPlayersAnswered ? currentQuestion.answers.map((answer, index) => (
-                            <button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>
-                        )) : (
-                            <div className="md:col-span-2 text-center p-2 sm:p-3 rounded-lg bg-gray-900/50 border border-gray-700 self-center">
-                                {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-lg sm:text-xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={20} /> Correct!</p> : <p className="text-lg sm:text-xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={20}/> Incorrect!</p>}
-                                {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-1 text-sm sm:text-base">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
+                    <div className="flex-grow relative grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
+                        {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${isAnswered ? getAnswerClass(answer) : 'bg-gray-700 hover:bg-gray-600 border-gray-600'}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
+                        {allPlayersAnswered && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 rounded-lg backdrop-blur-sm">
+                                <div className="text-center p-4">
+                                    {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-2xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={24} /> Correct!</p> : <p className="text-2xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={24}/> Incorrect!</p>}
+                                    {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-2">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -583,7 +396,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
                 {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
-                {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg transition-transform transform hover:scale-105">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
+                {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
             </footer>
         </div>
     );
