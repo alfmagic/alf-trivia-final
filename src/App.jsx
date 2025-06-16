@@ -57,12 +57,9 @@ const useTriviaAPI = () => {
                 'Other': { id: 'Other', subcategories: [] },
             };
             data.trivia_categories.forEach(cat => {
-                if (cat.name.includes('Entertainment')) categoryMap['Entertainment'].subcategories.push(cat);
+                const mainName = cat.name.split(':')[0];
+                if (categoryMap[mainName]) categoryMap[mainName].subcategories.push(cat);
                 else if (cat.name.includes('Science')) categoryMap['Science'].subcategories.push(cat);
-                else if (cat.name === 'History') categoryMap['History'].subcategories.push(cat);
-                else if (cat.name === 'Geography') categoryMap['Geography'].subcategories.push(cat);
-                else if (cat.name === 'Sports') categoryMap['Sports'].subcategories.push(cat);
-                else if (cat.name === 'General Knowledge') categoryMap['General Knowledge'].subcategories.push(cat);
                 else categoryMap['Other'].subcategories.push(cat);
             });
             return Object.values(categoryMap).filter(group => group.subcategories.length > 0);
@@ -70,37 +67,34 @@ const useTriviaAPI = () => {
     }, []);
 
     const fetchQuestions = useCallback(async ({ amount = 10, categories = [], difficulty = '' }) => {
-        const fetchUrl = (catId = '') => `https://opentdb.com/api.php?amount=${amount}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
-        
-        const categoriesToTry = categories.length > 0 ? shuffleArray(categories) : [''];
+        let allQuestions = [];
+        const categoriesToFetch = categories.length > 0 ? shuffleArray(categories) : [''];
 
-        for (const catId of categoriesToTry) {
+        for (const catId of categoriesToFetch) {
+            if (allQuestions.length >= amount) break;
+            const needed = amount - allQuestions.length;
+            const url = `https://opentdb.com/api.php?amount=${needed}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
             try {
-                const response = await fetch(fetchUrl(catId));
-                if (!response.ok) continue;
+                const response = await fetch(url);
                 const data = await response.json();
-                if (data.response_code === 0 && data.results.length > 0) {
-                    const questions = data.results.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
-                    if (questions.length >= amount) {
-                        return questions.slice(0, amount);
-                    }
+                if (data.results) {
+                    allQuestions.push(...data.results);
                 }
-            } catch (error) {
-                console.warn(`Failed to fetch from category ${catId}, trying next.`);
-            }
-        }
-        
-        try {
-            const response = await fetch(fetchUrl());
-            const data = await response.json();
-            if (data.response_code === 0) {
-                 return data.results.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
-            }
-        } catch (error) {
-             console.error('Final fallback fetch failed:', error);
+            } catch (error) { console.warn(`Failed to fetch from category ${catId}`); }
         }
 
-        return [];
+        if (allQuestions.length < amount) {
+            console.warn("Could not fetch enough questions, trying a general request.");
+            try {
+                const needed = amount - allQuestions.length;
+                const url = `https://opentdb.com/api.php?amount=${needed}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.results) allQuestions.push(...data.results);
+            } catch (error) { console.error("Final fallback fetch failed", error); }
+        }
+        
+        return shuffleArray(allQuestions).slice(0, amount).map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
     }, []);
 
     return { fetchCategories, fetchQuestions };
@@ -165,7 +159,7 @@ const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }
                             <details key={group.id} className="bg-gray-700/50 rounded-lg" open>
                                 <summary className="p-2 cursor-pointer font-bold text-white list-none flex justify-between items-center">{group.id}<ChevronLeft className="transform transition-transform -rotate-90 open:rotate-0" /></summary>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 border-t border-gray-600">
-                                    {group.subcategories.map(cat => ( <button key={cat.id} onClick={() => handleCategoryToggle(cat.id)} className={`py-2 px-3 text-left rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${settings.categories.includes(cat.id) ? 'bg-purple-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`}>{settings.categories.includes(cat.id) ? <CheckSquare size={14}/> : <Square size={14}/>}{cat.name}</button>))}
+                                    {group.subcategories.map(cat => ( <button key={cat.id} onClick={() => handleCategoryToggle(cat.id)} className={`py-2 px-3 text-left rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${settings.categories.includes(cat.id) ? 'bg-purple-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`}>{settings.categories.includes(cat.id) ? <CheckSquare size={14}/> : <Square size={14}/>}{cat.name.replace(`${group.id}: `, '')}</button>))}
                                 </div>
                             </details>
                         ))}
@@ -187,7 +181,7 @@ const EnterName = ({ setView, setPlayerName, gameMode, playerName, directJoinRoo
         <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full">
             <div className="text-center mb-10"><Users className="mx-auto h-12 w-12 text-purple-400" /><h1 className="text-4xl font-bold text-white mt-4">{directJoinRoomId ? "Joining Game" : "Enter Your Name"}</h1><p className="text-gray-400 mt-2">Enter your name or continue with a random one.</p></div>
             <form onSubmit={handleSubmit} className="w-full space-y-6">
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Clever Player" className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={generateRandomName()} className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
                 <div className="flex gap-4">
                     <button type="button" onClick={() => setView('settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
                     <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">Continue <ArrowRight className="inline-block ml-1" size={20}/></button>
@@ -276,16 +270,11 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                         setIsAnswered(myAnswer !== undefined);
                         if (myAnswer) setSelectedAnswer(myAnswer);
                         if(data.gameState === 'finished') setModalContent({ title: "Game Over!", body: <WinnerDisplay players={data.players} gameMode="multiplayer" /> });
-                    } else {
-                         setModalContent({ title: "Error", body: <p>The game room was not found. It might have been deleted.</p> });
-                    }
+                    } else { setModalContent({ title: "Error", body: <p>The game room was not found. It might have been deleted.</p> }); }
                 });
             } else {
                 const questions = await fetchQuestions(gameSettings);
-                if (questions.length < gameSettings.amount) {
-                     setModalContent({ title: "Not Enough Questions", body: <p>The API couldn't provide enough questions for your selected criteria. Please try different settings.</p> });
-                     return;
-                }
+                if (questions.length < gameSettings.amount) { setModalContent({ title: "Not Enough Questions", body: <p>The API couldn't provide enough questions for your selected criteria. Please try different settings.</p> }); return; }
                 setGameData({ questions, currentQuestionIndex: 0, players: [{ uid: userId, name: playerName, score: 0 }], gameState: 'playing', answers: {} });
             }
         };
@@ -298,11 +287,9 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             if (gameMode === 'single' && gameData?.gameState === 'finished' && db) {
                 const myPlayer = gameData.players[0];
                 if (myPlayer.score > 0) {
-                    const highScoresRef = collection(db, `artifacts/${appId}/public/data/highscores`);
-                    await addDoc(highScoresRef, { name: myPlayer.name, score: myPlayer.score, createdAt: new Date() });
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/highscores`), { name: myPlayer.name, score: myPlayer.score, createdAt: new Date() });
                 }
-                const highScoresRef = collection(db, `artifacts/${appId}/public/data/highscores`);
-                const q = query(highScoresRef, orderBy("score", "desc"), limit(10));
+                const q = query(collection(db, `artifacts/${appId}/public/data/highscores`), orderBy("score", "desc"), limit(10));
                 const querySnapshot = await getDocs(q);
                 const scores = querySnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
                 setHighScores(scores);
