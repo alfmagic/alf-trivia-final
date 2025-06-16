@@ -60,11 +60,9 @@ const useTriviaAPI = () => {
     const fetchQuestions = useCallback(async ({ amount = 10, categories = [], difficulty = '' }) => {
         const fetchPromises = [];
         if (categories.length === 0) {
-            // Fetch from any category if none are selected
             const url = `https://opentdb.com/api.php?amount=${amount}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
             fetchPromises.push(fetch(url).then(res => res.json()));
         } else {
-            // Fetch a proportional number of questions from each selected category
             let remainingAmount = amount;
             for (let i = 0; i < categories.length; i++) {
                 const catId = categories[i];
@@ -83,7 +81,7 @@ const useTriviaAPI = () => {
 
             if (allQuestions.length === 0) {
                 console.warn("Could not fetch any questions for the selected criteria. Falling back to general questions.");
-                return fetchQuestions({ amount: 10, categories: [], difficulty: '' }); // Fallback to any category
+                return fetchQuestions({ amount: 10, categories: [], difficulty: '' });
             }
             
             const formattedQuestions = allQuestions.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
@@ -117,7 +115,6 @@ const CustomModal = ({ title, children, onClose }) => (
     </div>
 );
 
-// --- MAIN APP COMPONENTS ---
 const MainMenu = ({ setView, setGameMode }) => (
     <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full text-center">
         <div className="mb-10">
@@ -489,7 +486,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             }
         };
         checkAndSubmitHighScore();
-    }, [gameData?.gameState, gameData?.players, gameMode, setHighScores]);
+    }, [gameData?.gameState, gameData?.players, gameMode, setHighScores, userId]);
 
     const handleAnswerSelect = async (answer) => {
         if (isAnswered) return;
@@ -501,7 +498,9 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         if (isCorrect) {
             const playerIndex = gameData.players.findIndex(p => p.uid === userId);
             const updatedPlayers = [...gameData.players];
-            updatedPlayers[playerIndex].score += 1;
+            if (playerIndex !== -1) {
+                updatedPlayers[playerIndex].score += 1;
+            }
             
             if (gameMode === 'multiplayer') {
                 const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
@@ -567,9 +566,9 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             </main>
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
-                 <div className="h-20 mb-2"> 
+                 <div className="h-20 mb-2 flex items-center justify-center"> 
                     {allPlayersAnswered && (
-                         <div className="text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
+                         <div className="w-full text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
                             {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-lg sm:text-xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={20} /> Correct!</p> : <p className="text-lg sm:text-xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={20}/> Incorrect!</p>}
                             {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-1 text-sm sm:text-base">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
                          </div>
@@ -644,3 +643,120 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
         </div>
     );
 };
+
+// This is the main component that orchestrates the entire application.
+// It uses state to manage which view is currently active.
+function App() {
+    const [view, setView] = useState('loading');
+    const [gameMode, setGameMode] = useState('single');
+    const [playerName, setPlayerName] = useState('');
+    const [roomId, setRoomId] = useState(null);
+    const [userId, setUserId] = useState(null);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [error, setError] = useState(null);
+    const [directJoinRoomId, setDirectJoinRoomId] = useState(null);
+    const [gameSettings, setGameSettings] = useState({ amount: 10, categories: [], difficulty: '' });
+    const [highScores, setHighScores] = useState([]);
+
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomCodeFromUrl = urlParams.get('room');
+        if (roomCodeFromUrl) {
+            setDirectJoinRoomId(roomCodeFromUrl.toUpperCase());
+            setGameMode('multiplayer');
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!auth) { return; }
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                setUserId(user.uid);
+            } else {
+                try {
+                    if (initialAuthToken) await signInWithCustomToken(auth, initialAuthToken);
+                    else await signInAnonymously(auth);
+                } catch (authError) {
+                    console.error("Authentication failed:", authError);
+                    setError("Authentication failed.");
+                    setView('error');
+                }
+            }
+            if(!isAuthReady) setIsAuthReady(true);
+        });
+        return () => unsubscribe();
+    }, [isAuthReady]);
+
+    useEffect(() => {
+        if (isAuthReady) {
+            if (directJoinRoomId) {
+                setView('settings');
+            } else {
+                setView('mainMenu');
+            }
+        }
+    }, [isAuthReady, directJoinRoomId]);
+
+    const handleJoinRoom = useCallback(async (code, pName, errorHandler = setError) => {
+        const roomCode = code.trim().toUpperCase();
+        if (!roomCode || !db) return;
+        const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomCode}`);
+        try {
+            const roomDoc = await getDoc(roomDocRef);
+            if (roomDoc.exists()) {
+                const roomData = roomDoc.data();
+                if (!roomData.players.some(p => p.uid === userId)) {
+                     await updateDoc(roomDocRef, {
+                        players: arrayUnion({ uid: userId, name: pName, score: 0 })
+                    });
+                }
+                setRoomId(roomCode);
+                setView('lobby');
+            } else {
+                errorHandler('Room not found. Check the code and try again.');
+            }
+        } catch (e) {
+            console.error("Error joining room: ", e);
+            errorHandler('Could not join room. Please try again.');
+        }
+    }, [userId]);
+
+
+    const renderView = () => {
+        if (!auth || (view !== 'loading' && !firebaseConfig.apiKey)) {
+            return <div className="text-white text-center p-8">
+                <h2 className="text-2xl font-bold text-red-400">Firebase Not Configured</h2>
+                <p className="mt-4 text-gray-300">This app requires Firebase to function. If you are the developer, please make sure to set up your Firebase project and add the configuration keys to your Vercel environment variables.</p>
+            </div>
+        }
+        if (view === 'error') return <div className="text-red-400 text-center">{error}</div>;
+        if (view === 'loading' || !isAuthReady) return <LoadingSpinner />;
+
+        switch (view) {
+            case 'mainMenu':
+                return <MainMenu setView={setView} setGameMode={setGameMode} />;
+            case 'settings':
+                return <SettingsScreen setView={setView} setGameSettings={setGameSettings} gameMode={gameMode} directJoinRoomId={directJoinRoomId}/>;
+            case 'enterName':
+                return <EnterName setView={setView} setPlayerName={setPlayerName} gameMode={gameMode} playerName={playerName} directJoinRoomId={directJoinRoomId} handleJoinRoom={handleJoinRoom} />;
+            case 'multiplayerMenu':
+                return <MultiplayerMenu setView={setView} setRoomId={setRoomId} userId={userId} playerName={playerName} handleJoinRoom={handleJoinRoom} gameSettings={gameSettings} />;
+            case 'lobby':
+                return <Lobby setView={setView} roomId={roomId} userId={userId} />;
+            case 'game':
+                return <Game gameMode={gameMode} roomId={roomId} userId={userId} setView={setView} playerName={playerName} gameSettings={gameSettings} setHighScores={setHighScores} />;
+            default:
+                return <MainMenu setView={setView} setGameMode={setGameMode} />;
+        }
+    };
+
+    return (
+        <div className="bg-gray-900 text-white font-sans w-full h-screen overflow-y-auto">
+             <div className="container mx-auto h-full flex flex-col items-center justify-center">
+                {renderView()}
+             </div>
+        </div>
+    );
+}
+
+export default App;
