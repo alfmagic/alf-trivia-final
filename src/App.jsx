@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
-import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
+import { Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
@@ -48,12 +48,9 @@ const useTriviaAPI = () => {
             const response = await fetch('https://opentdb.com/api_category.php');
             const data = await response.json();
             const categoryMap = {
-                'General Knowledge': { id: 'General Knowledge', subcategories: [] },
-                'Entertainment': { id: 'Entertainment', subcategories: [] },
-                'Science': { id: 'Science', subcategories: [] },
-                'History': { id: 'History', subcategories: [] },
-                'Geography': { id: 'Geography', subcategories: [] },
-                'Sports': { id: 'Sports', subcategories: [] },
+                'General Knowledge': { id: 'General Knowledge', subcategories: [] }, 'Entertainment': { id: 'Entertainment', subcategories: [] },
+                'Science': { id: 'Science', subcategories: [] }, 'History': { id: 'History', subcategories: [] },
+                'Geography': { id: 'Geography', subcategories: [] }, 'Sports': { id: 'Sports', subcategories: [] },
                 'Other': { id: 'Other', subcategories: [] },
             };
             data.trivia_categories.forEach(cat => {
@@ -68,26 +65,24 @@ const useTriviaAPI = () => {
 
     const fetchQuestions = useCallback(async ({ amount = 10, categories = [], difficulty = '' }) => {
         const fetchUrl = (catId = '', num = amount) => `https://opentdb.com/api.php?amount=${num}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
-        
         let allQuestions = [];
-        const categoriesToFetch = categories.length > 0 ? shuffleArray(categories) : [''];
-
-        if (categories.length > 1) {
-            const questionsPerCategory = Math.ceil(amount / categories.length);
+        
+        if (categories.length > 0) {
+            const questionsPerCategory = Math.max(1, Math.ceil(amount / categories.length));
             const promises = categories.map(catId => fetch(fetchUrl(catId, questionsPerCategory)).then(res => res.json()));
-            const results = await Promise.all(promises);
-            allQuestions = results.flatMap(result => result.results || []);
-        } else {
-            const response = await fetch(fetchUrl(categoriesToFetch[0], amount));
-            const data = await response.json();
-            if (data.results) allQuestions = data.results;
+            try {
+                const results = await Promise.all(promises);
+                allQuestions = results.flatMap(result => result.results || []);
+            } catch (error) { console.warn("Fetching from multiple categories failed, falling back."); }
         }
 
-        if (allQuestions.length === 0) {
-            console.warn("Could not fetch any questions for the selected criteria. Falling back to general questions.");
-            const response = await fetch(fetchUrl('', amount));
-            const data = await response.json();
-            if (data.results) allQuestions = data.results;
+        if (allQuestions.length < amount) {
+            const needed = amount - allQuestions.length;
+            try {
+                const response = await fetch(fetchUrl('', needed > 0 ? needed : amount));
+                const data = await response.json();
+                if (data.results) allQuestions.push(...data.results);
+            } catch (error) { console.error("Fallback fetch failed", error); }
         }
         
         return shuffleArray(allQuestions).slice(0, amount).map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
@@ -100,6 +95,7 @@ const useTriviaAPI = () => {
 const LoadingSpinner = ({ text = "Loading..."}) => ( <div className="flex flex-col justify-center items-center h-full text-center"><div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500"></div><p className="mt-4 text-white">{text}</p></div> );
 const CustomModal = ({ title, children, onClose }) => ( <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4"><div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-lg p-6 sm:p-8 w-full max-w-md text-white text-center"><h2 className="text-2xl font-bold mb-6">{title}</h2><div>{children}</div><button onClick={onClose} className="mt-8 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg">Close</button></div></div> );
 
+// --- MAIN APP COMPONENTS ---
 const MainMenu = ({ setView, setGameMode }) => (
     <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full text-center">
         <div className="mb-10"><Gamepad2 className="mx-auto h-16 w-16 text-purple-400" /><h1 className="text-5xl font-bold text-white mt-4">Trivia Questions</h1><p className="text-gray-400 mt-2">made by Alf</p></div>
@@ -116,16 +112,9 @@ const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }
     const [settings, setSettings] = useState({ amount: 10, categories: [], difficulty: '' });
     const { fetchCategories } = useTriviaAPI();
 
-    useEffect(() => {
-        const loadCategories = async () => { setGroupedCategories(await fetchCategories()); setLoading(false); };
-        loadCategories();
-    }, [fetchCategories]);
-
-    const handleCategoryToggle = (catId) => setSettings(prev => ({ ...prev, categories: prev.categories.includes(catId) ? prev.categories.filter(id => id !== catId) : [...prev.categories, catId] }));
-    const handleSelectAll = () => {
-        const allCategoryIds = groupedCategories.flatMap(g => g.subcategories.map(s => s.id));
-        setSettings(prev => ({ ...prev, categories: prev.categories.length === allCategoryIds.length ? [] : allCategoryIds }));
-    };
+    useEffect(() => { const load = async () => { setGroupedCategories(await fetchCategories()); setLoading(false); }; load(); }, [fetchCategories]);
+    const handleCategoryToggle = (catId) => setSettings(p => ({ ...p, categories: p.categories.includes(catId) ? p.categories.filter(id => id !== catId) : [...p.categories, catId] }));
+    const handleSelectAll = () => { const allIds = groupedCategories.flatMap(g => g.subcategories.map(s => s.id)); setSettings(p => ({ ...p, categories: p.categories.length === allIds.length ? [] : allIds })); };
     const handleContinue = () => { setGameSettings(settings); setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'multiplayerMenu' : 'enterName'); };
     const sliderStyle = { background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 100%)` };
 
@@ -323,13 +312,17 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         const nextIndex = gameData.currentQuestionIndex + 1;
         const isGameOver = nextIndex >= gameData.questions.length;
 
+        // BUG FIX: Reset answer state correctly for next question
+        setIsAnswered(false);
+        setSelectedAnswer(null);
+
         if (gameMode === 'multiplayer') {
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
         } else {
              if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
-             else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex, isAnswered: false, selectedAnswer: null }));
+             else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
         }
     };
     
@@ -363,7 +356,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                       <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
                       <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
                     </div>
-                    {/* UI FIX: Overlay is gone, replaced with a reserved space in the footer */}
+                    {/* UI FIX: Removed overlay. Answer buttons are always visible, their color indicates the result. */}
                     <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
                         {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
                     </div>
@@ -371,6 +364,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             </main>
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
+                 {/* UI FIX: Result message now has a reserved space so it doesn't push the button down */}
                  <div className="h-20 mb-2 flex items-center justify-center"> 
                     {allPlayersAnswered && (
                          <div className="w-full text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
@@ -449,7 +443,7 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
     );
 };
 
-export default function App() {
+function App() {
     const [view, setView] = useState('loading');
     const [gameMode, setGameMode] = useState('single');
     const [playerName, setPlayerName] = useState('');
@@ -526,7 +520,7 @@ export default function App() {
 
 
     const renderView = () => {
-        if (!auth || (view !== 'loading' && !firebaseConfig.apiKey)) {
+        if (!auth || (view !== 'loading' && (!firebaseConfig.apiKey || firebaseConfig.apiKey === "AIzaSyC123..."))) {
             return <div className="text-white text-center p-8">
                 <h2 className="text-2xl font-bold text-red-400">Firebase Not Configured</h2>
                 <p className="mt-4 text-gray-300">This app requires Firebase to function. If you are the developer, please make sure to set up your Firebase project and add the configuration keys to your Vercel environment variables.</p>
@@ -561,3 +555,5 @@ export default function App() {
         </div>
     );
 }
+
+export default App;
