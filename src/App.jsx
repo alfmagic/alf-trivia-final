@@ -5,15 +5,17 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, c
 import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-trivia-app';
+
 
 // --- FIREBASE INITIALIZATION ---
 let app;
 let auth;
 let db;
 
+// Basic check for firebase config
 if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     try {
         app = initializeApp(firebaseConfig);
@@ -23,8 +25,9 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         console.error("Firebase initialization failed:", error);
     }
 } else {
-    console.warn("Firebase configuration is missing. App will run in a limited mode.");
+    console.warn("Firebase configuration is missing or incomplete. App will run in a limited mode.");
 }
+
 
 // --- HELPER FUNCTIONS ---
 const generateRoomCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -288,7 +291,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         setSelectedAnswer(answer);
         setIsAnswered(true);
         const currentQuestion = gameData.questions[gameData.currentQuestionIndex];
-        const isCorrect = answer === currentQuestion.correctAnswer;
+        const isCorrect = answer === currentQuestion.correct_answer;
         
         if (isCorrect) {
             const playerIndex = gameData.players.findIndex(p => p.uid === userId);
@@ -315,12 +318,12 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
-            // For multiplayer, reset local state when a new question is set from Firestore
+            // For multiplayer, local state is reset via the onSnapshot listener
         } else {
-             setIsAnswered(false);
-             setSelectedAnswer(null);
-             if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
-             else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
+            setIsAnswered(false);
+            setSelectedAnswer(null);
+            if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
+            else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
         }
     };
     
@@ -333,7 +336,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
 
     const getAnswerClass = (answer) => {
         if (!allPlayersAnswered) return 'bg-gray-700 hover:bg-gray-600 border-gray-600';
-        const isCorrect = answer === currentQuestion.correctAnswer;
+        const isCorrect = answer === currentQuestion.correct_answer;
         if(isCorrect) return 'bg-green-500/50 border-green-500';
         if (answer === selectedAnswer && !isCorrect) return 'bg-red-500/50 border-red-500';
         return 'bg-gray-800 border-gray-700 opacity-70';
@@ -344,7 +347,10 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             {modalContent && <CustomModal title={modalContent.title} onClose={() => { setModalContent(null); setView('mainMenu'); }}>{modalContent.body}</CustomModal>}
             <header className="flex-shrink-0 flex justify-between items-center mb-2 sm:mb-4">
                 <span className="bg-purple-500/20 text-purple-300 font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-base">Question #{gameData.currentQuestionIndex + 1}</span>
-                <div className="text-center"><p className="font-bold text-lg sm:text-xl">Score: {myPlayer.score}</p>{gameMode === 'multiplayer' && <p className="text-gray-400 text-xs">Room: {roomId}</p>}</div>
+                <div className="text-center">
+                    <p className="font-bold text-lg sm:text-xl">{myPlayer.name}: {myPlayer.score}</p>
+                    {gameMode === 'multiplayer' && <p className="text-gray-400 text-xs">Room: {roomId}</p>}
+                </div>
                 <button onClick={() => setView('mainMenu')} className="bg-gray-700 hover:bg-gray-600 font-bold py-1.5 px-3 sm:py-2 sm:px-4 rounded-lg text-xs sm:text-base">Leave</button>
             </header>
             
@@ -361,16 +367,11 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             </main>
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
-                 <div className="h-20 mb-2 flex items-center justify-center"> 
-                    {allPlayersAnswered && (
-                         <div className="w-full text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
-                            {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-lg sm:text-xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={20} /> Correct!</p> : <p className="text-lg sm:text-xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={20}/> Incorrect!</p>}
-                            {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-1 text-sm sm:text-base">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
-                         </div>
-                    )}
-                </div>
-                {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
-                {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
+                 <div className="min-h-[90px] flex flex-col justify-end">
+                    {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
+                    
+                    {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
+                 </div>
             </footer>
         </div>
     );
@@ -381,20 +382,20 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
         const myScore = players[0]?.score ?? 0;
         return (
              <div className="text-white w-full">
-                <h3 className="text-xl font-bold text-center mb-2">Your Final Score</h3>
-                <p className="text-5xl font-bold text-purple-400 text-center mb-6">{myScore}</p>
-                 <h3 className="text-lg font-bold text-center mb-2">High Scores</h3>
-                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                     {highScores.length > 0 ? highScores.map((score, index) => (
-                         <div key={score.id} className="bg-gray-700 p-2 rounded-lg flex justify-between items-center text-sm">
-                             <span className="font-semibold flex items-center gap-2">
-                                 {index < 3 && <Trophy size={16} className={index === 0 ? 'text-yellow-400' : index === 1 ? 'text-gray-300' : 'text-yellow-600'} />}
-                                 {index + 1}. {score.name}
-                             </span>
-                             <span className="font-mono">{score.score} points</span>
-                         </div>
-                     )) : <div className="text-gray-400"><LoadingSpinner text="Loading scores..."/></div>}
-                 </div>
+                 <h3 className="text-xl font-bold text-center mb-2">Your Final Score</h3>
+                 <p className="text-5xl font-bold text-purple-400 text-center mb-6">{myScore}</p>
+                  <h3 className="text-lg font-bold text-center mb-2">High Scores</h3>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                       {highScores.length > 0 ? highScores.map((score, index) => (
+                           <div key={score.id} className="bg-gray-700 p-2 rounded-lg flex justify-between items-center text-sm">
+                               <span className="font-semibold flex items-center gap-2">
+                                   {index < 3 && <Trophy size={16} className={index === 0 ? 'text-yellow-400' : index === 1 ? 'text-gray-300' : 'text-yellow-600'} />}
+                                   {index + 1}. {score.name}
+                               </span>
+                               <span className="font-mono">{score.score} points</span>
+                           </div>
+                       )) : <div className="text-gray-400"><LoadingSpinner text="Loading scores..."/></div>}
+                  </div>
              </div>
         )
     }
@@ -410,7 +411,9 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
                         { order: 'order-1', crown: 'text-gray-300 h-8 w-8', userBg: 'bg-gray-400', box: 'bg-gray-500 h-20' },
                         { order: 'order-3', crown: 'text-yellow-600 h-8 w-8', userBg: 'bg-yellow-700', box: 'bg-yellow-800 h-16' }
                     ];
-                    const style = podiumStyles[index];
+                    // Handle cases with fewer than 3 players correctly
+                    const styleIndex = sortedPlayers.length === 2 && index === 1 ? 1 : index;
+                    const style = podiumStyles[styleIndex];
 
                     return (
                         <div key={player.uid} className={`flex flex-col items-center ${style.order}`}>
@@ -461,7 +464,12 @@ function App() {
     }, []);
 
     useEffect(() => {
-        if (!auth) { return; }
+        if (!auth) { 
+            console.error("Firebase Auth is not initialized. Check your configuration.");
+            setError("Application could not connect to services.");
+            setView('error');
+            return; 
+        }
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
             if (user) {
                 setUserId(user.uid);
@@ -498,6 +506,10 @@ function App() {
             const roomDoc = await getDoc(roomDocRef);
             if (roomDoc.exists()) {
                 const roomData = roomDoc.data();
+                if (roomData.gameState === 'playing') {
+                     errorHandler('This game has already started.');
+                     return;
+                }
                 if (!roomData.players.some(p => p.uid === userId)) {
                      await updateDoc(roomDocRef, {
                         players: arrayUnion({ uid: userId, name: pName, score: 0 })
@@ -519,7 +531,7 @@ function App() {
         if (!db) {
             return <div className="text-white text-center p-8">
                 <h2 className="text-2xl font-bold text-red-400">Firebase Not Configured</h2>
-                <p className="mt-4 text-gray-300">This app requires Firebase to function. If you are the developer, please make sure to set up your Firebase project and add the configuration keys to your Vercel environment variables.</p>
+                <p className="mt-4 text-gray-300">This app requires Firebase to function. Please ensure your Firebase configuration is correctly set up.</p>
             </div>
         }
         if (view === 'error') return <div className="text-red-400 text-center">{error}</div>;
@@ -546,7 +558,7 @@ function App() {
     return (
         <div className="bg-gray-900 text-white font-sans w-full h-screen overflow-y-auto">
              <div className="container mx-auto h-full flex flex-col items-center justify-center">
-                {renderView()}
+                 {renderView()}
              </div>
         </div>
     );
