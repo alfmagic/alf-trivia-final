@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
@@ -241,7 +241,15 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const [isAnswered, setIsAnswered] = useState(false);
     const { fetchQuestions } = useTriviaAPI();
     const [modalContent, setModalContent] = useState(null);
+    const gameContainerRef = useRef(null);
     
+    // This effect locks the screen height to prevent layout shifts on mobile
+    useEffect(() => {
+        if (gameContainerRef.current) {
+            gameContainerRef.current.style.height = `${window.innerHeight}px`;
+        }
+    }, []);
+
     useEffect(() => {
         const setupGame = async () => {
             if (gameMode === 'multiplayer') {
@@ -340,7 +348,8 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     };
     
     return (
-        <div className="w-full max-w-4xl mx-auto p-2 sm:p-4 grid grid-rows-[auto_1fr_auto] h-screen max-h-screen text-white">
+        <div ref={gameContainerRef} className="w-full max-w-4xl mx-auto p-2 sm:p-4 grid grid-rows-[auto_1fr_auto] text-white">
+            {modalContent && <CustomModal title={modalContent.title} onClose={() => { setModalContent(null); setView('mainMenu'); }}>{modalContent.body}</CustomModal>}
             <header className="flex-shrink-0 flex justify-between items-center py-2">
                 <span className="bg-purple-500/20 text-purple-300 font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-base">Question #{gameData.currentQuestionIndex + 1}</span>
                 <div className="text-center">
