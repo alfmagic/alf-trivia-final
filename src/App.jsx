@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
-import { Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
+import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
@@ -14,7 +14,6 @@ let app;
 let auth;
 let db;
 
-// SAFETY CHECK: Only initialize Firebase if the config is valid.
 if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     try {
         app = initializeApp(firebaseConfig);
@@ -312,15 +311,14 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         const nextIndex = gameData.currentQuestionIndex + 1;
         const isGameOver = nextIndex >= gameData.questions.length;
 
-        // BUG FIX: Reset answer state correctly for next question
-        setIsAnswered(false);
-        setSelectedAnswer(null);
-
         if (gameMode === 'multiplayer') {
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
+            // For multiplayer, reset local state when a new question is set from Firestore
         } else {
+             setIsAnswered(false);
+             setSelectedAnswer(null);
              if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
              else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
         }
