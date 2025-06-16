@@ -44,26 +44,6 @@ const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
 
 // --- API & DATA HOOKS ---
 const useTriviaAPI = () => {
-    const fetchCategories = useCallback(async () => {
-        try {
-            const response = await fetch('https://opentdb.com/api_category.php');
-            const data = await response.json();
-            const categoryMap = {
-                'General Knowledge': { id: 'General Knowledge', subcategories: [] }, 'Entertainment': { id: 'Entertainment', subcategories: [] },
-                'Science': { id: 'Science', subcategories: [] }, 'History': { id: 'History', subcategories: [] },
-                'Geography': { id: 'Geography', subcategories: [] }, 'Sports': { id: 'Sports', subcategories: [] },
-                'Other': { id: 'Other', subcategories: [] },
-            };
-            data.trivia_categories.forEach(cat => {
-                const mainName = cat.name.split(':')[0];
-                if (categoryMap[mainName]) categoryMap[mainName].subcategories.push(cat);
-                else if (cat.name.includes('Science')) categoryMap['Science'].subcategories.push(cat);
-                else categoryMap['Other'].subcategories.push(cat);
-            });
-            return Object.values(categoryMap).filter(group => group.subcategories.length > 0);
-        } catch (error) { console.error('Failed to fetch categories:', error); return []; }
-    }, []);
-
     const fetchQuestions = useCallback(async ({ amount = 10, categories = [], difficulty = '' }) => {
         const fetchUrl = (catId = '', num = amount) => `https://opentdb.com/api.php?amount=${num}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
         let allQuestions = [];
@@ -89,7 +69,7 @@ const useTriviaAPI = () => {
         return shuffleArray(allQuestions).slice(0, amount).map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
     }, []);
 
-    return { fetchCategories, fetchQuestions };
+    return { fetchQuestions };
 };
 
 // --- UI COMPONENTS ---
@@ -107,18 +87,14 @@ const MainMenu = ({ setView, setGameMode }) => (
 );
 
 const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }) => {
-    const [groupedCategories, setGroupedCategories] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [settings, setSettings] = useState({ amount: 10, categories: [], difficulty: '' });
-    const { fetchCategories } = useTriviaAPI();
+    const [settings, setSettings] = useState({ amount: 10, difficulty: '' });
 
-    useEffect(() => { const load = async () => { setGroupedCategories(await fetchCategories()); setLoading(false); }; load(); }, [fetchCategories]);
-    const handleCategoryToggle = (catId) => setSettings(p => ({ ...p, categories: p.categories.includes(catId) ? p.categories.filter(id => id !== catId) : [...p.categories, catId] }));
-    const handleSelectAll = () => { const allIds = groupedCategories.flatMap(g => g.subcategories.map(s => s.id)); setSettings(p => ({ ...p, categories: p.categories.length === allIds.length ? [] : allIds })); };
-    const handleContinue = () => { setGameSettings(settings); setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'multiplayerMenu' : 'enterName'); };
+    const handleContinue = () => {
+        setGameSettings({ ...settings, categories: [] });
+        setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'multiplayerMenu' : 'enterName');
+    };
+    
     const sliderStyle = { background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 100%)` };
-
-    if (loading) return <LoadingSpinner text="Fetching categories..."/>;
 
     return (
         <div className="w-full max-w-lg mx-auto p-4 flex flex-col justify-center h-full">
@@ -132,22 +108,6 @@ const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }
                     <label className="block text-lg font-medium text-white mb-2">Difficulty</label>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {['', 'easy', 'medium', 'hard'].map(diff => ( <button key={diff} onClick={() => setSettings({...settings, difficulty: diff})} className={`py-2 px-3 rounded-lg capitalize text-sm font-bold transition-colors ${settings.difficulty === diff ? 'bg-purple-600 text-white ring-2 ring-purple-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}>{diff || 'Any'}</button>))}
-                    </div>
-                </div>
-                <div>
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="block text-lg font-medium text-white">Categories</label>
-                        <button onClick={handleSelectAll} className="text-xs font-bold text-purple-400 hover:text-purple-300">{settings.categories.length === groupedCategories.flatMap(g => g.subcategories.map(s => s.id)).length ? 'Deselect All' : 'Select All'}</button>
-                    </div>
-                    <div className="space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-900/50 rounded-lg">
-                        {groupedCategories.map(group => (
-                            <details key={group.id} className="bg-gray-700/50 rounded-lg" open>
-                                <summary className="p-2 cursor-pointer font-bold text-white list-none flex justify-between items-center">{group.id}<ChevronLeft className="transform transition-transform -rotate-90 open:rotate-0" /></summary>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 border-t border-gray-600">
-                                    {group.subcategories.map(cat => ( <button key={cat.id} onClick={() => handleCategoryToggle(cat.id)} className={`py-2 px-3 text-left rounded-lg text-xs font-bold transition-colors flex items-center gap-2 ${settings.categories.includes(cat.id) ? 'bg-purple-600 text-white' : 'bg-gray-600 hover:bg-gray-500 text-gray-300'}`}>{settings.categories.includes(cat.id) ? <CheckSquare size={14}/> : <Square size={14}/>}{cat.name.replace(`${group.id}: `, '')}</button>))}
-                                </div>
-                            </details>
-                        ))}
                     </div>
                 </div>
             </div>
