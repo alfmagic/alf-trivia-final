@@ -41,19 +41,27 @@ const useTriviaAPI = () => {
         try {
             const response = await fetch('https://opentdb.com/api_category.php');
             const data = await response.json();
-            const grouped = data.trivia_categories.reduce((acc, cat) => {
-                const [main, sub] = cat.name.split(': ');
-                if (!acc[main]) {
-                    acc[main] = { id: main, subcategories: [] };
-                }
-                if (sub) {
-                    acc[main].subcategories.push({ ...cat, name: sub });
-                } else {
-                     acc[main].subcategories.push({ ...cat, name: main, isMain: true });
-                }
-                return acc;
-            }, {});
-            return Object.values(grouped);
+            const categoryMap = {
+                'General Knowledge': { id: 'General Knowledge', subcategories: [] },
+                'Entertainment': { id: 'Entertainment', subcategories: [] },
+                'Science': { id: 'Science', subcategories: [] },
+                'History': { id: 'History', subcategories: [] },
+                'Geography': { id: 'Geography', subcategories: [] },
+                'Sports': { id: 'Sports', subcategories: [] },
+                'Other': { id: 'Other', subcategories: [] },
+            };
+
+            data.trivia_categories.forEach(cat => {
+                if (cat.name.includes('Entertainment')) categoryMap['Entertainment'].subcategories.push(cat);
+                else if (cat.name.includes('Science')) categoryMap['Science'].subcategories.push(cat);
+                else if (cat.name === 'History') categoryMap['History'].subcategories.push(cat);
+                else if (cat.name === 'Geography') categoryMap['Geography'].subcategories.push(cat);
+                else if (cat.name === 'Sports') categoryMap['Sports'].subcategories.push(cat);
+                else if (cat.name === 'General Knowledge') categoryMap['General Knowledge'].subcategories.push(cat);
+                else categoryMap['Other'].subcategories.push(cat);
+            });
+
+            return Object.values(categoryMap).filter(group => group.subcategories.length > 0);
         } catch (error) { console.error('Failed to fetch categories:', error); return []; }
     }, []);
 
@@ -63,16 +71,11 @@ const useTriviaAPI = () => {
             const url = `https://opentdb.com/api.php?amount=${amount}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
             fetchPromises.push(fetch(url).then(res => res.json()));
         } else {
-            let remainingAmount = amount;
-            for (let i = 0; i < categories.length; i++) {
-                const catId = categories[i];
-                const numQuestions = Math.ceil(remainingAmount / (categories.length - i));
-                remainingAmount -= numQuestions;
-                if (numQuestions > 0) {
-                    const url = `https://opentdb.com/api.php?amount=${numQuestions}&category=${catId}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
-                    fetchPromises.push(fetch(url).then(res => res.json()));
-                }
-            }
+            const questionsPerCategory = Math.max(1, Math.ceil(amount / categories.length));
+            categories.forEach(catId => {
+                const url = `https://opentdb.com/api.php?amount=${questionsPerCategory}&category=${catId}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
+                fetchPromises.push(fetch(url).then(res => res.json()));
+            });
         }
         
         try {
@@ -80,8 +83,8 @@ const useTriviaAPI = () => {
             const allQuestions = results.flatMap(result => result.results || []);
 
             if (allQuestions.length === 0) {
-                console.warn("Could not fetch any questions for the selected criteria. Falling back to general questions.");
-                return fetchQuestions({ amount: 10, categories: [], difficulty: '' });
+                console.warn("Could not fetch questions for the selected criteria. Falling back to general questions.");
+                return await fetchQuestions({ amount: 10, categories: [], difficulty: '' });
             }
             
             const formattedQuestions = allQuestions.map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
@@ -175,7 +178,7 @@ const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }
     };
     
     const sliderStyle = {
-        background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / 15 * 100}%, #4b5563 ${(settings.amount - 5) / 15 * 100}%, #4b5563 100%)`
+        background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 100%)`
     };
 
     if (loading) return <LoadingSpinner text="Fetching categories..."/>;
@@ -462,22 +465,26 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                 return unsubscribe;
             } else {
                 const questions = await fetchQuestions(gameSettings);
-                if (questions.length === 0) {
-                     setModalContent({ title: "Error", body: <p>Could not load questions for these settings. Please try again.</p> });
+                if (questions.length < gameSettings.amount) {
+                     setModalContent({ title: "Not Enough Questions", body: <p>The API couldn't provide enough questions for your selected criteria. Please try different settings.</p> });
                      return;
                 }
                 setGameData({ questions, currentQuestionIndex: 0, players: [{ uid: userId, name: playerName, score: 0 }], gameState: 'playing', answers: {} });
             }
         };
-        setupGame().then(unsub => { return () => unsub && unsub() });
+        const unsubPromise = setupGame();
+        return () => { unsubPromise.then(unsub => unsub && unsub()); };
     }, [gameMode, roomId, userId, playerName, fetchQuestions, gameSettings]);
     
     useEffect(() => {
         const checkAndSubmitHighScore = async () => {
             if (gameMode === 'single' && gameData?.gameState === 'finished' && db) {
                 const myPlayer = gameData.players[0];
+                if (myPlayer.score > 0) {
+                    const highScoresRef = collection(db, `artifacts/${appId}/public/data/highscores`);
+                    await addDoc(highScoresRef, { name: myPlayer.name, score: myPlayer.score, createdAt: new Date() });
+                }
                 const highScoresRef = collection(db, `artifacts/${appId}/public/data/highscores`);
-                await addDoc(highScoresRef, { name: myPlayer.name, score: myPlayer.score, createdAt: new Date() });
                 const q = query(highScoresRef, orderBy("score", "desc"), limit(10));
                 const querySnapshot = await getDocs(q);
                 const scores = querySnapshot.docs.map(doc => ({id: doc.id, ...doc.data()}));
@@ -526,9 +533,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
              if (isGameOver) {
                 setGameData(prev => ({...prev, gameState: 'finished' }));
              } else {
-                setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
-                setIsAnswered(false);
-                setSelectedAnswer(null);
+                setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex, isAnswered: false, selectedAnswer: null }));
              }
         }
     };
@@ -558,22 +563,25 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             </header>
             
             <main className="flex-grow flex flex-col justify-center min-h-0">
-                <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4 sm:p-6">
-                    <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
-                    <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4">{currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}</div>
+                <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4 sm:p-6 flex flex-col h-full">
+                    <div className="flex-shrink-0">
+                      <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
+                      <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
+                    </div>
+                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
+                        {!allPlayersAnswered ? currentQuestion.answers.map((answer, index) => (
+                            <button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>
+                        )) : (
+                            <div className="md:col-span-2 text-center p-2 sm:p-3 rounded-lg bg-gray-900/50 border border-gray-700 self-center">
+                                {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-lg sm:text-xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={20} /> Correct!</p> : <p className="text-lg sm:text-xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={20}/> Incorrect!</p>}
+                                {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-1 text-sm sm:text-base">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </main>
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
-                 <div className="h-20 mb-2 flex items-center justify-center"> 
-                    {allPlayersAnswered && (
-                         <div className="w-full text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
-                            {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-lg sm:text-xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={20} /> Correct!</p> : <p className="text-lg sm:text-xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={20}/> Incorrect!</p>}
-                            {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-1 text-sm sm:text-base">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
-                         </div>
-                    )}
-                </div>
                 {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
                 {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg transition-transform transform hover:scale-105">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
             </footer>
@@ -598,7 +606,7 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
                              </span>
                              <span className="font-mono">{score.score} points</span>
                          </div>
-                     )) : <p className="text-gray-400">Loading scores...</p>}
+                     )) : <div className="text-gray-400"><LoadingSpinner text="Loading scores..."/></div>}
                  </div>
              </div>
         )
@@ -644,8 +652,6 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
     );
 };
 
-// This is the main component that orchestrates the entire application.
-// It uses state to manage which view is currently active.
 function App() {
     const [view, setView] = useState('loading');
     const [gameMode, setGameMode] = useState('single');
