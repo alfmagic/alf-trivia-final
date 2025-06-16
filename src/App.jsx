@@ -363,10 +363,34 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                 </div>
             </main>
             
-            <footer className="flex-shrink-0 mt-2 sm:mt-4 flex flex-col justify-end min-h-[100px]">
-                {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
-                
-                {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg mt-auto">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
+            <footer className="flex-shrink-0 mt-2 sm:mt-4">
+                 {gameMode === 'multiplayer' && gameData?.players.length > 1 && (
+                    <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs">
+                        <h4 className="text-white text-center font-bold mb-1">Players</h4>
+                        <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
+                            {gameData.players.map(p => (
+                                <div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}>
+                                    <span className="text-white">{p.name}</span>
+                                    <span className="text-gray-300 font-mono">({p.score})</span>
+                                    {gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div className="w-full pt-2">
+                     <button
+                        onClick={handleNextQuestion}
+                        disabled={!((allPlayersAnswered) && (isHost || gameMode === 'single'))}
+                        className={`w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg transition-opacity duration-300 ${
+                            (allPlayersAnswered) && (isHost || gameMode === 'single')
+                                ? 'opacity-100 pointer-events-auto'
+                                : 'opacity-0 pointer-events-none'
+                        }`}
+                    >
+                        {gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}
+                    </button>
+                </div>
             </footer>
         </div>
     );
