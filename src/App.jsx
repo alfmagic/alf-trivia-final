@@ -14,16 +14,17 @@ let app;
 let auth;
 let db;
 
-try {
-    if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+// SAFETY CHECK: Only initialize Firebase if the config is valid.
+if (firebaseConfig.apiKey && firebaseConfig.projectId) {
+    try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-    } else {
-        throw new Error("Firebase config not found or incomplete.");
+    } catch (error) {
+        console.error("Firebase initialization failed:", error);
     }
-} catch (error) {
-    console.error(error.message);
+} else {
+    console.warn("Firebase configuration is missing. App will run in a limited mode.");
 }
 
 // --- HELPER FUNCTIONS ---
@@ -95,7 +96,6 @@ const useTriviaAPI = () => {
 const LoadingSpinner = ({ text = "Loading..."}) => ( <div className="flex flex-col justify-center items-center h-full text-center"><div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-purple-500"></div><p className="mt-4 text-white">{text}</p></div> );
 const CustomModal = ({ title, children, onClose }) => ( <div className="fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center z-50 p-4"><div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-lg p-6 sm:p-8 w-full max-w-md text-white text-center"><h2 className="text-2xl font-bold mb-6">{title}</h2><div>{children}</div><button onClick={onClose} className="mt-8 w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded-lg">Close</button></div></div> );
 
-// --- MAIN APP COMPONENTS ---
 const MainMenu = ({ setView, setGameMode }) => (
     <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full text-center">
         <div className="mb-10"><Gamepad2 className="mx-auto h-16 w-16 text-purple-400" /><h1 className="text-5xl font-bold text-white mt-4">Trivia Questions</h1><p className="text-gray-400 mt-2">made by Alf</p></div>
@@ -356,7 +356,6 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                       <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
                       <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
                     </div>
-                    {/* UI FIX: Removed overlay. Answer buttons are always visible, their color indicates the result. */}
                     <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
                         {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
                     </div>
@@ -364,7 +363,6 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             </main>
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
-                 {/* UI FIX: Result message now has a reserved space so it doesn't push the button down */}
                  <div className="h-20 mb-2 flex items-center justify-center"> 
                     {allPlayersAnswered && (
                          <div className="w-full text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
@@ -520,7 +518,7 @@ function App() {
 
 
     const renderView = () => {
-        if (!auth || (view !== 'loading' && (!firebaseConfig.apiKey || firebaseConfig.apiKey === "AIzaSyC123..."))) {
+        if (!db) {
             return <div className="text-white text-center p-8">
                 <h2 className="text-2xl font-bold text-red-400">Firebase Not Configured</h2>
                 <p className="mt-4 text-gray-300">This app requires Firebase to function. If you are the developer, please make sure to set up your Firebase project and add the configuration keys to your Vercel environment variables.</p>
