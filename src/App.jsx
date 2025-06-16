@@ -340,9 +340,8 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     };
     
     return (
-        <div className="w-full max-w-4xl mx-auto p-2 sm:p-4 flex flex-col h-screen max-h-screen text-white">
-            {modalContent && <CustomModal title={modalContent.title} onClose={() => { setModalContent(null); setView('mainMenu'); }}>{modalContent.body}</CustomModal>}
-            <header className="flex-shrink-0 flex justify-between items-center mb-2 sm:mb-4">
+        <div className="w-full max-w-4xl mx-auto p-2 sm:p-4 grid grid-rows-[auto_1fr_auto] h-screen max-h-screen text-white">
+            <header className="flex-shrink-0 flex justify-between items-center py-2">
                 <span className="bg-purple-500/20 text-purple-300 font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-base">Question #{gameData.currentQuestionIndex + 1}</span>
                 <div className="text-center">
                     <p className="font-bold text-lg sm:text-xl">{myPlayer.name}: {myPlayer.score}</p>
@@ -351,7 +350,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                 <button onClick={() => setView('mainMenu')} className="bg-gray-700 hover:bg-gray-600 font-bold py-1.5 px-3 sm:py-2 sm:px-4 rounded-lg text-xs sm:text-base">Leave</button>
             </header>
             
-            <main className="flex-grow flex flex-col justify-center min-h-0">
+            <main className="overflow-y-auto py-2">
                 <div className="bg-gray-800/50 border border-gray-700 rounded-2xl p-4 sm:p-6 flex flex-col h-full">
                     <div className="flex-shrink-0">
                       <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
@@ -363,7 +362,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                 </div>
             </main>
             
-            <footer className="flex-shrink-0 mt-2 sm:mt-4">
+            <footer className="py-2">
                  {gameMode === 'multiplayer' && gameData?.players.length > 1 && (
                     <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs">
                         <h4 className="text-white text-center font-bold mb-1">Players</h4>
@@ -378,14 +377,14 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                         </div>
                     </div>
                 )}
-                <div className="w-full pt-2">
+                <div className="w-full min-h-[58px] flex items-center justify-center">
                      <button
                         onClick={handleNextQuestion}
                         disabled={!((allPlayersAnswered) && (isHost || gameMode === 'single'))}
                         className={`w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg transition-opacity duration-300 ${
                             (allPlayersAnswered) && (isHost || gameMode === 'single')
-                                ? 'opacity-100 pointer-events-auto'
-                                : 'opacity-0 pointer-events-none'
+                                ? 'opacity-100'
+                                : 'opacity-0'
                         }`}
                     >
                         {gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}
