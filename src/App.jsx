@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
-import { Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
+import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
@@ -23,7 +23,7 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         console.error("Firebase initialization failed:", error);
     }
 } else {
-    console.warn("Firebase configuration is missing. App will run in a limited mode. This is normal in local preview.");
+    console.warn("Firebase configuration is missing. App will run in a limited mode.");
 }
 
 // --- HELPER FUNCTIONS ---
@@ -242,9 +242,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const [modalContent, setModalContent] = useState(null);
     
     useEffect(() => {
-        setIsAnswered(false); setSelectedAnswer(null);
         const setupGame = async () => {
-            setGameData(null); 
             if (gameMode === 'multiplayer') {
                 if (!roomId || !db) return;
                 const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
@@ -256,11 +254,11 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                         setIsAnswered(myAnswer !== undefined);
                         if (myAnswer) setSelectedAnswer(myAnswer);
                         if(data.gameState === 'finished') setModalContent({ title: "Game Over!", body: <WinnerDisplay players={data.players} gameMode="multiplayer" /> });
-                    } else { setModalContent({ title: "Error", body: <p>The game room was not found.</p> }); }
+                    } else { setModalContent({ title: "Error", body: <p>The game room was not found. It might have been deleted.</p> }); }
                 });
             } else {
                 const questions = await fetchQuestions(gameSettings);
-                if (questions.length < gameSettings.amount) { setModalContent({ title: "Not Enough Questions", body: <p>The API couldn't provide enough questions for your criteria. Please try different settings.</p> }); return; }
+                if (questions.length < gameSettings.amount) { setModalContent({ title: "Not Enough Questions", body: <p>The API couldn't provide enough questions for your selected criteria. Please try different settings.</p> }); return; }
                 setGameData({ questions, currentQuestionIndex: 0, players: [{ uid: userId, name: playerName, score: 0 }], gameState: 'playing', answers: {} });
             }
         };
@@ -283,7 +281,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             }
         };
         checkAndSubmitHighScore();
-    }, [gameData?.gameState]);
+    }, [gameData?.gameState, gameData?.players, gameMode, setHighScores, userId]);
 
     const handleAnswerSelect = async (answer) => {
         if (isAnswered) return;
@@ -313,14 +311,14 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
         const nextIndex = gameData.currentQuestionIndex + 1;
         const isGameOver = nextIndex >= gameData.questions.length;
 
-        setIsAnswered(false);
-        setSelectedAnswer(null);
-
         if (gameMode === 'multiplayer') {
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
+            // For multiplayer, reset local state when a new question is set from Firestore
         } else {
+             setIsAnswered(false);
+             setSelectedAnswer(null);
              if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
              else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
         }
@@ -334,7 +332,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const allPlayersAnswered = gameMode === 'multiplayer' ? gameData.players.length === Object.keys(gameData.answers || {}).length : isAnswered;
 
     const getAnswerClass = (answer) => {
-        if (!allPlayersAnswered) return 'bg-gray-700 hover:bg-gray-600 border border-gray-600';
+        if (!allPlayersAnswered) return 'bg-gray-700 hover:bg-gray-600 border-gray-600';
         const isCorrect = answer === currentQuestion.correctAnswer;
         if(isCorrect) return 'bg-green-500/50 border-green-500';
         if (answer === selectedAnswer && !isCorrect) return 'bg-red-500/50 border-red-500';
