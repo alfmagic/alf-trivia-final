@@ -312,7 +312,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const handleNextQuestion = async () => {
         const nextIndex = gameData.currentQuestionIndex + 1;
         const isGameOver = nextIndex >= gameData.questions.length;
-        
+
         setIsAnswered(false);
         setSelectedAnswer(null);
 
