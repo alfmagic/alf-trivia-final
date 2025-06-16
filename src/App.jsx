@@ -67,31 +67,27 @@ const useTriviaAPI = () => {
     }, []);
 
     const fetchQuestions = useCallback(async ({ amount = 10, categories = [], difficulty = '' }) => {
+        const fetchUrl = (catId = '', num = amount) => `https://opentdb.com/api.php?amount=${num}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
+        
         let allQuestions = [];
         const categoriesToFetch = categories.length > 0 ? shuffleArray(categories) : [''];
 
-        for (const catId of categoriesToFetch) {
-            if (allQuestions.length >= amount) break;
-            const needed = amount - allQuestions.length;
-            const url = `https://opentdb.com/api.php?amount=${needed}&type=multiple${catId ? `&category=${catId}` : ''}${difficulty ? `&difficulty=${difficulty}` : ''}`;
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-                if (data.results) {
-                    allQuestions.push(...data.results);
-                }
-            } catch (error) { console.warn(`Failed to fetch from category ${catId}`); }
+        if (categories.length > 1) {
+            const questionsPerCategory = Math.ceil(amount / categories.length);
+            const promises = categories.map(catId => fetch(fetchUrl(catId, questionsPerCategory)).then(res => res.json()));
+            const results = await Promise.all(promises);
+            allQuestions = results.flatMap(result => result.results || []);
+        } else {
+            const response = await fetch(fetchUrl(categoriesToFetch[0], amount));
+            const data = await response.json();
+            if (data.results) allQuestions = data.results;
         }
 
-        if (allQuestions.length < amount) {
-            console.warn("Could not fetch enough questions, trying a general request.");
-            try {
-                const needed = amount - allQuestions.length;
-                const url = `https://opentdb.com/api.php?amount=${needed}&type=multiple${difficulty ? `&difficulty=${difficulty}` : ''}`;
-                const response = await fetch(url);
-                const data = await response.json();
-                if (data.results) allQuestions.push(...data.results);
-            } catch (error) { console.error("Final fallback fetch failed", error); }
+        if (allQuestions.length === 0) {
+            console.warn("Could not fetch any questions for the selected criteria. Falling back to general questions.");
+            const response = await fetch(fetchUrl('', amount));
+            const data = await response.json();
+            if (data.results) allQuestions = data.results;
         }
         
         return shuffleArray(allQuestions).slice(0, amount).map(q => ({ ...q, answers: shuffleArray([q.correct_answer, ...q.incorrect_answers]) }));
@@ -367,21 +363,22 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                       <div className="flex gap-2 mb-2 flex-wrap"><span className="text-xs sm:text-sm bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full" dangerouslySetInnerHTML={{ __html: currentQuestion.category }}></span><span className="text-xs sm:text-sm bg-yellow-500/20 text-yellow-300 px-3 py-1 rounded-full capitalize" dangerouslySetInnerHTML={{ __html: currentQuestion.difficulty }}></span></div>
                       <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
                     </div>
-                    <div className="flex-grow relative grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
-                        {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${isAnswered ? getAnswerClass(answer) : 'bg-gray-700 hover:bg-gray-600 border-gray-600'}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
-                        {allPlayersAnswered && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 rounded-lg backdrop-blur-sm">
-                                <div className="text-center p-4">
-                                    {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-2xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={24} /> Correct!</p> : <p className="text-2xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={24}/> Incorrect!</p>}
-                                    {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-2">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
-                                </div>
-                            </div>
-                        )}
+                    {/* UI FIX: Overlay is gone, replaced with a reserved space in the footer */}
+                    <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
+                        {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
                     </div>
                 </div>
             </main>
             
             <footer className="flex-shrink-0 mt-2 sm:mt-4">
+                 <div className="h-20 mb-2 flex items-center justify-center"> 
+                    {allPlayersAnswered && (
+                         <div className="w-full text-center p-2 sm:p-3 rounded-lg bg-gray-800 border border-gray-700">
+                            {selectedAnswer === currentQuestion.correctAnswer ? <p className="text-lg sm:text-xl font-bold text-green-400 flex items-center justify-center gap-2"><CheckCircle size={20} /> Correct!</p> : <p className="text-lg sm:text-xl font-bold text-red-400 flex items-center justify-center gap-2"><XCircle size={20}/> Incorrect!</p>}
+                            {selectedAnswer !== currentQuestion.correctAnswer && <p className="text-gray-300 mt-1 text-sm sm:text-base">Correct answer: <span className="font-bold text-green-400" dangerouslySetInnerHTML={{__html: currentQuestion.correctAnswer}}></span></p>}
+                         </div>
+                    )}
+                </div>
                 {gameMode === 'multiplayer' && gameData?.players.length > 1 && (<div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs"><h4 className="text-white text-center font-bold mb-1">Players</h4><div className="flex flex-wrap justify-center gap-x-2 gap-y-1">{gameData.players.map(p => (<div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}><span className="text-white">{p.name}</span><span className="text-gray-300 font-mono">({p.score})</span>{gameData.answers && gameData.answers[p.uid] !== undefined && <CheckCircle size={14} className="text-green-400"/>}</div>))}</div></div>)}
                 {(allPlayersAnswered) && (isHost || gameMode === 'single') && (<button onClick={handleNextQuestion} className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-5 rounded-xl text-lg">{gameData.currentQuestionIndex >= gameData.questions.length - 1 ? 'Finish Game' : 'Next Question'}</button>)}
             </footer>
@@ -452,7 +449,7 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
     );
 };
 
-function App() {
+export default function App() {
     const [view, setView] = useState('loading');
     const [gameMode, setGameMode] = useState('single');
     const [playerName, setPlayerName] = useState('');
@@ -564,5 +561,3 @@ function App() {
         </div>
     );
 }
-
-export default App;
