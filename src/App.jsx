@@ -4,17 +4,15 @@ import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken }
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
 import { Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
 
-// --- FIREBASE CONFIGURATION (BULLETPROOF) ---
-let firebaseConfig = {};
-let app, auth, db;
+// --- FIREBASE CONFIGURATION ---
+const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-trivia-app';
 
-try {
-    if (import.meta.env.VITE_FIREBASE_CONFIG) {
-        firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG);
-    }
-} catch (e) {
-    console.error("ERROR: VITE_FIREBASE_CONFIG is not valid JSON!", e);
-}
+// --- FIREBASE INITIALIZATION ---
+let app;
+let auth;
+let db;
 
 if (firebaseConfig.apiKey && firebaseConfig.projectId) {
     try {
@@ -25,11 +23,8 @@ if (firebaseConfig.apiKey && firebaseConfig.projectId) {
         console.error("Firebase initialization failed:", error);
     }
 } else {
-    console.warn("Firebase configuration is missing or incomplete. App will run in a limited mode. This is normal in local preview.");
+    console.warn("Firebase configuration is missing. App will run in a limited mode. This is normal in local preview.");
 }
-
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-trivia-app';
 
 // --- HELPER FUNCTIONS ---
 const generateRoomCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -247,11 +242,9 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const [modalContent, setModalContent] = useState(null);
     
     useEffect(() => {
+        setIsAnswered(false); setSelectedAnswer(null);
         const setupGame = async () => {
-            setIsAnswered(false); // Reset on new game setup
-            setSelectedAnswer(null);
-            setGameData(null); // Clear old game data
-
+            setGameData(null); 
             if (gameMode === 'multiplayer') {
                 if (!roomId || !db) return;
                 const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
@@ -290,7 +283,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             }
         };
         checkAndSubmitHighScore();
-    }, [gameData?.gameState, gameData?.players, gameMode, setHighScores, userId]);
+    }, [gameData?.gameState]);
 
     const handleAnswerSelect = async (answer) => {
         if (isAnswered) return;
@@ -319,20 +312,17 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const handleNextQuestion = async () => {
         const nextIndex = gameData.currentQuestionIndex + 1;
         const isGameOver = nextIndex >= gameData.questions.length;
+        
+        setIsAnswered(false);
+        setSelectedAnswer(null);
 
         if (gameMode === 'multiplayer') {
             if (gameData.hostId !== userId) return;
             const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
             await updateDoc(roomDocRef, isGameOver ? { gameState: 'finished' } : { currentQuestionIndex: nextIndex, answers: {} });
         } else {
-             // BUG FIX: Correctly reset state for single player
-             setIsAnswered(false);
-             setSelectedAnswer(null);
-             if (isGameOver) {
-                setGameData(prev => ({...prev, gameState: 'finished' }));
-             } else {
-                setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
-             }
+             if (isGameOver) setGameData(prev => ({...prev, gameState: 'finished' }));
+             else setGameData(prev => ({ ...prev, currentQuestionIndex: nextIndex }));
         }
     };
     
