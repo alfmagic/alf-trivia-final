@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, collection, deleteDoc, query, orderBy, limit, getDocs, addDoc } from 'firebase/firestore';
-import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square } from 'lucide-react';
+import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, Crown, User, ArrowRight, LogOut, CheckCircle, XCircle, Link as LinkIcon, SlidersHorizontal, Trophy, CheckSquare, Square, Loader2 } from 'lucide-react';
 
 // --- FIREBASE CONFIGURATION ---
 // This configuration will work in the interactive environment.
@@ -128,7 +128,7 @@ const EnterName = ({ setView, setPlayerName, gameMode, playerName, directJoinRoo
             <form onSubmit={handleSubmit} className="w-full space-y-6">
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={generateRandomName()} className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
                 <div className="flex gap-4">
-                    <button type="button" onClick={() => setView('settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
+                    <button type="button" onClick={() => setView(gameMode === 'multiplayer' ? 'multiplayerMenu' : 'settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
                     <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">Continue <ArrowRight className="inline-block ml-1" size={20}/></button>
                 </div>
             </form>
@@ -139,15 +139,50 @@ const EnterName = ({ setView, setPlayerName, gameMode, playerName, directJoinRoo
 const MultiplayerMenu = ({ setView, setRoomId, userId, playerName, handleJoinRoom, gameSettings }) => {
     const [joinCode, setJoinCode] = useState('');
     const [error, setError] = useState('');
+    const [isCreating, setIsCreating] = useState(false);
     const { fetchQuestions } = useTriviaAPI();
-    const handleCreateRoom = async () => { const newRoomId = generateRoomCode(); setRoomId(newRoomId); const questions = await fetchQuestions(gameSettings); if (questions.length < gameSettings.amount) { setError('Could not fetch enough questions with these settings. Please try again.'); return; } const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${newRoomId}`); try { await setDoc(roomDocRef, { hostId: userId, players: [{ uid: userId, name: playerName, score: 0 }], questions, gameSettings, currentQuestionIndex: 0, gameState: 'waiting', createdAt: new Date(), answers: {} }); setView('lobby'); } catch (e) { console.error("Error creating room: ", e); setError('Could not create room. Please try again.'); } };
-    const onJoinSubmit = async (e) => { e.preventDefault(); if (!joinCode.trim()) return; await handleJoinRoom(joinCode, playerName, setError); };
+
+    const handleCreateRoom = async () => {
+        setIsCreating(true);
+        setError('');
+        const newRoomId = generateRoomCode();
+        try {
+            const questions = await fetchQuestions(gameSettings);
+            if (questions.length < gameSettings.amount) {
+                setError('Could not fetch enough questions with these settings. Please try again.');
+                setIsCreating(false);
+                return;
+            }
+            const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${newRoomId}`);
+            await setDoc(roomDocRef, {
+                hostId: userId,
+                players: [{ uid: userId, name: playerName, score: 0 }],
+                questions,
+                gameSettings,
+                currentQuestionIndex: 0,
+                gameState: 'waiting',
+                createdAt: new Date(),
+                answers: {}
+            });
+            setRoomId(newRoomId);
+            setView('lobby');
+        } catch (e) {
+            console.error("Error creating room: ", e);
+            setError('Could not create room. Please try again.');
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const onJoinSubmit = async (e) => { e.preventDefault(); if (!joinCode.trim()) return; await handleJoinRoom(joinCode.toUpperCase(), playerName, setError); };
     return (
         <div className="w-full max-w-md mx-auto p-4 flex flex-col items-center justify-center h-full">
             <div className="text-center mb-10"><Users className="mx-auto h-12 w-12 text-green-400" /><h1 className="text-4xl font-bold text-white mt-4">Multiplayer</h1><p className="text-gray-400 mt-2">Create a room or join a friend's</p></div>
             {error && <p className="text-red-400 bg-red-900/50 p-3 rounded-lg mb-4">{error}</p>}
             <div className="w-full space-y-4">
-                <button onClick={handleCreateRoom} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3">Create Room</button>
+                <button onClick={handleCreateRoom} disabled={isCreating} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 px-6 rounded-xl text-lg flex items-center justify-center gap-3 disabled:opacity-75 disabled:cursor-not-allowed">
+                    {isCreating ? <><Loader2 className="animate-spin mr-2" /> Creating...</> : 'Create Room'}
+                </button>
                 <p className="text-center text-gray-400">OR</p>
                 <form onSubmit={onJoinSubmit} className="w-full space-y-4">
                     <input type="text" value={joinCode} onChange={(e) => setJoinCode(e.target.value.toUpperCase())} placeholder="ENTER ROOM CODE" className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center tracking-widest font-mono text-lg focus:outline-none focus:border-pink-500" maxLength="6" />
@@ -186,9 +221,19 @@ const Lobby = ({ setView, roomId, userId }) => {
             <div className="bg-gray-800/50 border border-gray-700 p-3 rounded-xl flex items-center justify-center gap-2 mb-2"><span className="text-gray-300">Code:</span><span className="text-2xl font-bold text-white tracking-widest font-mono">{roomId}</span><button onClick={() => copyToClipboard(roomId, 'code')} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg"><Copy size={18} /></button></div>
             <div className="bg-gray-800/50 border border-gray-700 p-3 rounded-xl flex items-center justify-center gap-2 mb-6"><span className="text-gray-300">Link:</span><button onClick={() => copyToClipboard(shareLink, 'link')} className="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg flex items-center gap-2"><LinkIcon size={18} /> Copy Invite Link</button></div>
             <p className="text-sm text-green-400 mb-6 h-5 transition-opacity">{copied ? `Copied ${copied} to clipboard!` : ''}</p>
-            <div className="w-full bg-gray-800/50 border border-gray-700 rounded-xl p-6 mb-8"><h3 className="text-white font-bold text-lg mb-4 text-center">Players in room ({room.players.length})</h3><div className="space-y-3 max-h-48 overflow-y-auto">{room.players.map(player => (<div key={player.uid} className="bg-gray-700/50 p-3 rounded-lg flex items-center justify-between"><span className="text-white font-semibold">{player.name}</span>{player.uid === room.hostId && <Crown size={20} className="text-yellow-400" />}</div>))}</div></div>
+            <div className="w-full bg-gray-800/50 border border-gray-700 rounded-xl p-6 mb-8">
+                <h3 className="text-white font-bold text-lg mb-4 text-center">Players in room ({room.players?.length || 0})</h3>
+                <div className="space-y-3 max-h-48 overflow-y-auto">
+                    {room.players && room.players.map(player => (
+                        <div key={player.uid} className="bg-gray-700/50 p-3 rounded-lg flex items-center justify-between">
+                            <span className="text-white font-semibold">{player.name}</span>
+                            {player.uid === room.hostId && <Crown size={20} className="text-yellow-400" />}
+                        </div>
+                    ))}
+                </div>
+            </div>
             <div className="w-full flex flex-col space-y-3">
-                {isHost && (<button onClick={handleStartGame} disabled={room.players.length < 1} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"><Play /> Start Game</button>)}
+                {isHost && (<button onClick={handleStartGame} disabled={!room.players || room.players.length < 1} className="w-full bg-gradient-to-r from-green-500 to-teal-400 text-white font-bold py-4 rounded-xl text-lg flex items-center justify-center gap-3 disabled:opacity-50 disabled:grayscale"><Play /> Start Game</button>)}
                  <button onClick={handleLeaveRoom} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><LogOut className="inline-block mr-2" size={20}/> Leave Room</button>
             </div>
         </div>
@@ -332,11 +377,11 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             </main>
             
             <footer className="py-2">
-                 {gameMode === 'multiplayer' && gameData?.players.length > 1 && (
+                 {gameMode === 'multiplayer' && room?.players?.length > 1 && (
                     <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs">
                         <h4 className="text-white text-center font-bold mb-1">Players</h4>
                         <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
-                            {gameData.players.map(p => (
+                            {room.players.map(p => (
                                 <div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}>
                                     <span className="text-white">{p.name}</span>
                                     <span className="text-gray-300 font-mono">({p.score})</span>
@@ -393,7 +438,7 @@ const WinnerDisplay = ({ players, gameMode, highScores = [] }) => {
     return (
         <div className="text-white">
             <div className="flex justify-center items-end gap-2 sm:gap-4 mb-6">
-                {sortedPlayers.slice(0, 3).map((player, index) => {
+                {sortedPlayers.map((player, index) => {
                     const podiumStyles = [
                         { order: 'order-2', crown: 'text-yellow-400 h-10 w-10', userBg: 'bg-yellow-500', box: 'bg-yellow-600 h-24' },
                         { order: 'order-1', crown: 'text-gray-300 h-8 w-8', userBg: 'bg-gray-400', box: 'bg-gray-500 h-20' },
@@ -479,7 +524,7 @@ function App() {
     useEffect(() => {
         if (isAuthReady) {
             if (directJoinRoomId) {
-                setView('settings');
+                setView('enterName');
             } else {
                 setView('mainMenu');
             }
@@ -544,7 +589,7 @@ function App() {
     };
 
     return (
-        <div className="bg-gray-900 text-white font-sans w-full h-screen overflow-y-auto">
+        <div className="bg-gray-900 text-white font-sans w-full h-screen overflow-y-hidden">
              <div className="container mx-auto h-full flex flex-col items-center justify-center">
                  {renderView()}
              </div>
@@ -553,3 +598,4 @@ function App() {
 }
 
 export default App;
+
