@@ -584,7 +584,7 @@ function App() {
             console.error("Error joining room: ", e);
             errorHandler('Could not join room. Please try again.');
         }
-    }, [userId]);
+    }, [userId, setView, setRoomId]);
 
 
     const renderView = () => {
