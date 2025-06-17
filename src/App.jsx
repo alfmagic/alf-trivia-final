@@ -128,7 +128,7 @@ const EnterName = ({ setView, setPlayerName, gameMode, playerName, directJoinRoo
             <form onSubmit={handleSubmit} className="w-full space-y-6">
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={generateRandomName()} className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
                 <div className="flex gap-4">
-                    <button type="button" onClick={() => setView(gameMode === 'multiplayer' ? 'multiplayerMenu' : 'settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
+                    <button type="button" onClick={() => setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'settings' : 'mainMenu')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
                     <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">Continue <ArrowRight className="inline-block ml-1" size={20}/></button>
                 </div>
             </form>
@@ -203,11 +203,33 @@ const Lobby = ({ setView, roomId, userId }) => {
     useEffect(() => {
         if (!roomId || !db) { setView('multiplayerMenu'); return; }
         const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
-        const unsubscribe = onSnapshot(roomDocRef, (doc) => { if (doc.exists()) { const data = doc.data(); setRoom(data); setIsHost(data.hostId === userId); if (data.gameState === 'playing') setView('game'); } else { setError('This room no longer exists.'); setTimeout(() => { setView('multiplayerMenu'); }, 3000); } });
+        const unsubscribe = onSnapshot(roomDocRef, (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                setRoom(data);
+                setIsHost(data.hostId === userId);
+                if (data.gameState === 'playing') {
+                    setView('game');
+                }
+            } else {
+                setError('This room no longer exists.');
+                setTimeout(() => { setView('mainMenu'); }, 3000);
+            }
+        });
         return () => unsubscribe();
     }, [roomId, userId, setView]);
 
-    const handleStartGame = async () => { const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`); try { await updateDoc(roomDocRef, { gameState: 'playing' }); } catch (e) { console.error("Error starting game: ", e); setError('Failed to start the game.'); } };
+    const handleStartGame = async () => {
+        if (!room || room.hostId !== userId) return;
+        const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`);
+        try {
+            await updateDoc(roomDocRef, { gameState: 'playing' });
+        } catch (e) {
+            console.error("Error starting game: ", e);
+            setError('Failed to start the game.');
+        }
+    };
+    
     const handleLeaveRoom = async () => { if (!room) return; try { const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomId}`); const updatedPlayers = room.players.filter(p => p.uid !== userId); if (updatedPlayers.length === 0) { await deleteDoc(roomDocRef); } else { const newHostId = (isHost && updatedPlayers.length > 0) ? updatedPlayers[0].uid : room.hostId; await updateDoc(roomDocRef, { players: updatedPlayers, hostId: newHostId }); } setView('mainMenu'); } catch (e) { console.error("Error leaving room: ", e); setError('Could not leave the room.'); } };
     const copyToClipboard = (text, type) => { const textArea = document.createElement('textarea'); textArea.value = text; document.body.appendChild(textArea); textArea.select(); try { document.execCommand('copy'); setCopied(type); setTimeout(() => setCopied(''), 2000); } catch (err) { console.error('Failed to copy: ', err); } document.body.removeChild(textArea); };
 
@@ -298,7 +320,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     }, [gameData?.gameState, gameData?.players, gameMode, setHighScores, userId]);
 
     const handleAnswerSelect = async (answer) => {
-        if (isAnswered) return;
+        if (isAnswered || gameData?.gameState === 'finished') return;
         setSelectedAnswer(answer);
         setIsAnswered(true);
         const currentQuestion = gameData.questions[gameData.currentQuestionIndex];
@@ -342,7 +364,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
     const currentQuestion = gameData.questions[gameData.currentQuestionIndex];
     const myPlayer = gameData.players.find(p => p.uid === userId) || gameData.players[0];
     const isHost = gameMode === 'multiplayer' ? gameData.hostId === userId : true;
-    const allPlayersAnswered = gameMode === 'multiplayer' ? gameData.players.length === Object.keys(gameData.answers || {}).length : isAnswered;
+    const allPlayersAnswered = gameMode === 'multiplayer' && gameData.players ? gameData.players.length === Object.keys(gameData.answers || {}).length : isAnswered;
 
     const getAnswerClass = (answer) => {
         if (!isAnswered) return 'bg-gray-700 hover:bg-gray-600 border-gray-600';
@@ -358,7 +380,7 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
             <header className="flex-shrink-0 flex justify-between items-center py-2">
                 <span className="bg-purple-500/20 text-purple-300 font-bold px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-base">Question #{gameData.currentQuestionIndex + 1}</span>
                 <div className="text-center">
-                    <p className="font-bold text-lg sm:text-xl">{myPlayer.name}: {myPlayer.score}</p>
+                    <p className="font-bold text-lg sm:text-xl">{myPlayer?.name}: {myPlayer?.score}</p>
                     {gameMode === 'multiplayer' && <p className="text-gray-400 text-xs">Room: {roomId}</p>}
                 </div>
                 <button onClick={() => setView('mainMenu')} className="bg-gray-700 hover:bg-gray-600 font-bold py-1.5 px-3 sm:py-2 sm:px-4 rounded-lg text-xs sm:text-base">Leave</button>
@@ -371,17 +393,17 @@ const Game = ({ gameMode, roomId, userId, setView, playerName, gameSettings, set
                       <h2 className="text-lg sm:text-2xl font-bold mb-4" dangerouslySetInnerHTML={{ __html: currentQuestion.question }}></h2>
                     </div>
                     <div className="flex-grow grid grid-cols-1 md:grid-cols-2 gap-2 sm:gap-4 content-center">
-                        {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
+                        {currentQuestion.answers.map((answer, index) => (<button key={index} onClick={() => handleAnswerSelect(answer)} disabled={isAnswered || gameData.gameState === 'finished'} className={`w-full p-3 sm:p-4 rounded-xl border-2 font-semibold text-left transition-all duration-300 text-sm sm:text-base ${getAnswerClass(answer)}`}><span dangerouslySetInnerHTML={{ __html: answer }}></span></button>))}
                     </div>
                 </div>
             </main>
             
             <footer className="py-2">
-                 {gameMode === 'multiplayer' && room?.players?.length > 1 && (
+                 {gameMode === 'multiplayer' && gameData?.players?.length > 1 && (
                     <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-2 mb-2 text-xs">
                         <h4 className="text-white text-center font-bold mb-1">Players</h4>
                         <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
-                            {room.players.map(p => (
+                            {gameData.players.map(p => (
                                 <div key={p.uid} className={`flex items-center gap-1 p-1 rounded-lg transition-all ${gameData.answers && gameData.answers[p.uid] !== undefined ? 'bg-green-500/20' : 'bg-gray-700/50'}`}>
                                     <span className="text-white">{p.name}</span>
                                     <span className="text-gray-300 font-mono">({p.score})</span>
@@ -533,21 +555,26 @@ function App() {
 
     const handleJoinRoom = useCallback(async (code, pName, errorHandler = setError) => {
         const roomCode = code.trim().toUpperCase();
-        if (!roomCode || !db) return;
+        if (!roomCode || !db || !userId) return;
         const roomDocRef = doc(db, `artifacts/${appId}/public/data/rooms/${roomCode}`);
         try {
             const roomDoc = await getDoc(roomDocRef);
             if (roomDoc.exists()) {
                 const roomData = roomDoc.data();
-                if (roomData.gameState === 'playing') {
-                     errorHandler('This game has already started.');
+                if (roomData.gameState !== 'waiting') {
+                     errorHandler('This game has already started or is finished.');
                      return;
                 }
-                if (!roomData.players.some(p => p.uid === userId)) {
-                     await updateDoc(roomDocRef, {
-                        players: arrayUnion({ uid: userId, name: pName, score: 0 })
-                    });
+                // If player is already in the list, just go to lobby
+                if (roomData.players.some(p => p.uid === userId)) {
+                    setRoomId(roomCode);
+                    setView('lobby');
+                    return;
                 }
+                // Otherwise, add the new player
+                await updateDoc(roomDocRef, {
+                    players: arrayUnion({ uid: userId, name: pName, score: 0 })
+                });
                 setRoomId(roomCode);
                 setView('lobby');
             } else {
