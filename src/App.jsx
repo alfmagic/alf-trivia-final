@@ -620,6 +620,7 @@ function App() {
         <div className="bg-gray-900 text-white font-sans w-full h-screen overflow-y-hidden">
              <div className="container mx-auto h-full flex flex-col items-center justify-center">
                  {renderView()}
+                 <Analytics />
              </div>
         </div>
     );
