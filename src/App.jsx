@@ -6,7 +6,7 @@ import { Sparkles, Users, Gamepad2, Settings, Copy, Share2, Play, ChevronLeft, C
 
 // --- FIREBASE CONFIGURATION ---
 // This configuration will work in the interactive environment.
-const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || '{}');
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-trivia-app';
 
@@ -86,12 +86,12 @@ const MainMenu = ({ setView, setGameMode }) => (
     </div>
 );
 
-const SettingsScreen = ({ setView, setGameSettings, gameMode, directJoinRoomId }) => {
+const SettingsScreen = ({ setView, setGameSettings }) => {
     const [settings, setSettings] = useState({ amount: 10, difficulty: '' });
 
     const handleContinue = () => {
         setGameSettings({ ...settings, categories: [] });
-        setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'multiplayerMenu' : 'enterName');
+        setView('enterName');
     };
     
     const sliderStyle = { background: `linear-gradient(to right, #8b5cf6 0%, #8b5cf6 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 ${(settings.amount - 5) / (20-5) * 100}%, #4b5563 100%)` };
@@ -128,7 +128,7 @@ const EnterName = ({ setView, setPlayerName, gameMode, playerName, directJoinRoo
             <form onSubmit={handleSubmit} className="w-full space-y-6">
                 <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={generateRandomName()} className="w-full bg-gray-700 text-white placeholder-gray-400 border-2 border-gray-600 rounded-lg py-3 px-4 text-center text-lg focus:outline-none focus:border-purple-500"/>
                 <div className="flex gap-4">
-                    <button type="button" onClick={() => setView(gameMode === 'multiplayer' && !directJoinRoomId ? 'settings' : 'mainMenu')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
+                    <button type="button" onClick={() => directJoinRoomId ? setView('mainMenu') : setView('settings')} className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
                     <button type="submit" className="w-full bg-gradient-to-r from-purple-600 to-blue-500 text-white font-bold py-3 px-4 rounded-lg">Continue <ArrowRight className="inline-block ml-1" size={20}/></button>
                 </div>
             </form>
@@ -189,7 +189,7 @@ const MultiplayerMenu = ({ setView, setRoomId, userId, playerName, handleJoinRoo
                     <button type="submit" className="w-full bg-gradient-to-r from-pink-600 to-purple-500 text-white font-bold py-3 px-4 rounded-lg disabled:opacity-50" disabled={!joinCode.trim()}>Join Room</button>
                 </form>
             </div>
-             <button type="button" onClick={() => setView('settings')} className="mt-8 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
+             <button type="button" onClick={() => setView('enterName')} className="mt-8 bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg"><ChevronLeft className="inline-block mr-1" size={20}/> Back</button>
         </div>
     );
 };
@@ -625,4 +625,3 @@ function App() {
 }
 
 export default App;
-
